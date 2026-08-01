@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_4 (corridor traversal in the patrick_henry_whole greybox).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+-->
+<routes scenario="scenario_2">
+
+  <route id="1" leg_by_leg="true"
+         description="Drive WEST along the y=94.5 corridor, from x=46 to x=34. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="95.5" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="95.5" yaw="180.0" description="lane_1" />
+    <waypoint x="42.0" y="95.5" yaw="180.0" description="lane_2" />
+    <waypoint x="40.0" y="95.5" yaw="180.0" description="lane_3" />
+    <waypoint x="39.5" y="95.5" yaw="180.0" description="lane_exit" />
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the west end (x=34) and drive EAST back along the y=94.5 corridor to x=46.">
+    <start x="39.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="40.0" y="95.5" yaw="0.0" description="lane_3" />
+    <waypoint x="42.0" y="95.5" yaw="0.0" description="lane_2" />
+    <waypoint x="44.0" y="95.5" yaw="0.0" description="lane_1" />
+    <waypoint x="46.0" y="95.5" yaw="0.0" description="lane_entrance" />
+  </route>
+
+
+</routes>

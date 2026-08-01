@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_1 (corridor traversal in the patrick_henry_whole greybox).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+-->
+<routes scenario="scenario_1">
+
+  <route id="1" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="74.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="80.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="90.0" description="lane_2" />
+    <waypoint x="46.0" y="91.0" yaw="90.0" description="lane_exit" />
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the north end and drive south back down the x=46 lane through the corridor.">
+    <start x="46.0" y="91.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="86.0" yaw="270.0" description="lane_2" />
+    <waypoint x="46.0" y="80.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="74.0" yaw="270.0" description="lane_entrance" />
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="80.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="90.0" description="lane_2" />
+    <waypoint x="46.0" y="91.0" yaw="90.0" description="lane_exit" />
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Reverse of route 3: spawn at the north end and drive south back down the x=46 lane through the corridor.">
+    <start x="46.0" y="91.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="86.0" yaw="270.0" description="lane_2" />
+    <waypoint x="46.0" y="80.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="71.0" yaw="270.0" description="lane_entrance" />
+  </route>
+
+  <route id="5" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="74.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="80.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="90.0" description="lane_2" />
+    <waypoint x="46.0" y="93.0" yaw="90.0" description="lane_exit" />
+  </route>
+
+  <route id="6" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the north end and drive south back down the x=46 lane through the corridor.">
+    <start x="46.0" y="93.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="86.0" yaw="270.0" description="lane_2" />
+    <waypoint x="46.0" y="80.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="74.0" yaw="270.0" description="lane_entrance" />
+  </route>
+
+</routes>
