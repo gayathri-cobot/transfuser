@@ -162,3 +162,16 @@ cython_debug/
 results/
 model_ckpt/
 data/
+
+container_files/transfuser/data
+container_files/transfuser/log
+container_files/transfuser/log_cmdpts
+container_files/transfuser/newcrop
+container_files/transfuser/newcrop_resnet
+container_files/transfuser/bag_data
+container_files/transfuser/data
+container_files/transfuser/with_vel_log
+container_files/transfuser/with_vel_log_1
+container_files/transfuser/viz
+
+corridor3_w2_route5_180308/

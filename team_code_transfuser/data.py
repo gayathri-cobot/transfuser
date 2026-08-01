@@ -799,6 +799,7 @@ def lidar_bev_cam_correspondences(world, lidar_vis=None, image_vis=None, step=No
 
     valid_bev_points = []
     valid_cam_points = []
+    print(results_total.shape)
     for i in range(results_total.shape[0]):
         # Project the LiDAR point to BEV and save index of the BEV image pixel.
         lidar_index = int(results_total[i, 2])
