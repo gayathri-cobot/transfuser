@@ -1163,21 +1163,21 @@ class LidarCenterNet(nn.Module):
         label[:, -1, 0] = 0.
         label[:, -1, 1] = 128.
 
-        if not expert_waypoints is None:
-            lidar_panel = self.draw_waypoints(label[0], expert_waypoints[i:i+1, -1:], lidar_panel, color=(0, 0, 255))
+        # if not expert_waypoints is None:
+        #     lidar_panel = self.draw_waypoints(label[0], expert_waypoints[i:i+1, -1:], lidar_panel, color=(0, 0, 255))
 
-        lidar_panel = self.draw_waypoints(label[0], deepcopy(pred_wp[i:i + 1, 2:]), lidar_panel, color=(255, 255, 255)) # Auxliary waypoints in white
-        lidar_panel = self.draw_waypoints(label[0], deepcopy(pred_wp[i:i + 1, :2]), lidar_panel, color=(255, 0, 0))     # First two, relevant waypoints in blue
+        # lidar_panel = self.draw_waypoints(label[0], deepcopy(pred_wp[i:i + 1, 2:]), lidar_panel, color=(255, 255, 255)) # Auxliary waypoints in white
+        # lidar_panel = self.draw_waypoints(label[0], deepcopy(pred_wp[i:i + 1, :2]), lidar_panel, color=(255, 0, 0))     # First two, relevant waypoints in blue
 
         # draw target points
-        lidar_panel = self.draw_target_point(target_point[i].detach().cpu().numpy(), lidar_panel)
+        # lidar_panel = self.draw_target_point(target_point[i].detach().cpu().numpy(), lidar_panel)
 
         # stuck text
         lidar_panel = Image.fromarray(lidar_panel)
         draw = ImageDraw.Draw(lidar_panel)
-        draw.text((10, 0), "stuck detector:   %04d" % (stuck_detector), font=font)
-        draw.text((10, 30), "forced move:      %s" % (" True" if forced_move else "False"), font=font,
-                  fill=(255, 0, 0, 255) if forced_move else (255, 255, 255, 255))
+        # draw.text((10, 0), "stuck detector:   %04d" % (stuck_detector), font=font)
+        # draw.text((10, 30), "forced move:      %s" % (" True" if forced_move else "False"), font=font,
+        #           fill=(255, 0, 0, 255) if forced_move else (255, 255, 255, 255))
         lidar_panel = np.array(lidar_panel)
         cv2.imwrite(str(save_path + ("/%d_lidar_bev_detections_waypoints.png" % frame_id)), lidar_panel)
 

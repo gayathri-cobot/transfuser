@@ -352,6 +352,8 @@ class GPT(nn.Module):
         # project velocity to n_embed
         if(self.use_velocity==True):
             velocity_embeddings = self.vel_emb(velocity) # (B, C)
+            # print(velocity_embeddings.unsqueeze(1).shape)
+            # print(self.pos_emb.shape, token_embeddings.shape)
             # add (learnable) positional embedding and velocity embedding for all tokens
             x = self.drop(self.pos_emb + token_embeddings + velocity_embeddings.unsqueeze(1)) #(B, an * T, C)
         else:

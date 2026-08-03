@@ -27,6 +27,10 @@ from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -104,6 +108,33 @@ def fill_missing_model_inputs(batch, config, device):
             ego_vel.to(device, dtype=torch.float32).reshape(-1, 1))
 
 
+def rotation_matrix(theta):
+    c, s = np.cos(theta), np.sin(theta)
+    return np.array([[c, -s], [s, c]])
+
+
+def plot_trajectory_comparison(pred_points, gt_points, viz_dir):
+    """Overlay every predicted and ground-truth waypoint collected across steps - each
+    already converted from its step's ego-local frame into a single frame anchored on
+    the first step - and save it to viz_dir."""
+    pred = np.asarray(pred_points)
+    gt = np.asarray(gt_points)
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(gt[:, 0], gt[:, 1], marker='o', s=15, color='tab:green', alpha=0.6, label='ground truth')
+    ax.scatter(pred[:, 0], pred[:, 1], marker='x', s=15, color='tab:red', alpha=0.6, label='predicted')
+    ax.set_xlabel('x (m, relative to first step)')
+    ax.set_ylabel('y (m, relative to first step)')
+    ax.set_title('Predicted vs ground-truth waypoints (anchored on first step)')
+    ax.legend()
+    ax.set_aspect('equal', adjustable='datalim')
+
+    plot_path = os.path.join(viz_dir, 'trajectory_comparison.png')
+    fig.savefig(plot_path)
+    plt.close(fig)
+    return plot_path
+
+
 def main():
     args = parse_args()
 
@@ -138,8 +169,7 @@ def main():
     print(f"backbone={config.backbone}")
     print(f"routes={config.train_data}")
 
-    if config.backbone == 'geometric_fusion':
-        os.makedirs(args.viz_dir, exist_ok=True)  # data.py hardcodes /workspace/viz
+    os.makedirs(args.viz_dir, exist_ok=True)  # data.py also hardcodes /workspace/viz for geometric_fusion
 
     dataset = IsaacSimData(root=config.train_data, config=config)
     print(f"Dataset length: {len(dataset)} samples")
@@ -173,8 +203,18 @@ def main():
 
     print(f"Running the full trajectory: {len(dataset)} steps")
 
+    # The dataset only gives us each step's ego-local waypoints and its absolute yaw
+    # ('theta'), no absolute position. So we anchor a frame on the first step and chain
+    # steps together using each step's yaw (relative to the first step's) plus the
+    # previous step's first ground-truth waypoint as the displacement to the next step.
+    theta0 = prev_theta = None
+    prev_gt_local = None
+    anchor_pos = np.zeros(2)
+    pred_points_anchored = []
+    gt_points_anchored = []
+
     for step, batch in enumerate(loader):
-        if step>5:
+        if step>15:
             break
         if step == 0:
             print("Batch keys:", list(batch.keys()))
@@ -184,7 +224,7 @@ def main():
 
         rgb = batch['rgb'].to(device, dtype=torch.float32)
         lidar_bev = batch['lidar'].to(device, dtype=torch.float32)
-        ego_vel = batch['velocity'].to(device, dtype=torch.float32)
+        ego_vel = batch['velocity'].to(device, dtype=torch.float32).reshape(-1, 1)
         target_point = batch['target_point'].to(device, dtype=torch.float32)
         target_point_image = batch['target_point_image'].to(device, dtype=torch.float32)
         # target_point, target_point_image, ego_vel = fill_missing_model_inputs(batch, config, device)
@@ -204,8 +244,29 @@ def main():
               f"gt last wp={gt_waypoints[0, -1].cpu().numpy()}, "
               f"pred last wp={pred_wp[0, -1].cpu().numpy()}")
 
+        theta = float(batch['theta'][0])
+        gt_local = gt_waypoints[0].cpu().numpy()
+        pred_local = pred_wp[0].cpu().numpy()
+
+        if theta0 is None:
+            theta0 = theta
+        else:
+            # Advance the anchor position by the previous step's actual displacement
+            # to this step (its first ground-truth waypoint), rotated into the anchor frame.
+            anchor_pos = anchor_pos + rotation_matrix(prev_theta - theta0) @ prev_gt_local[0]
+
+        R = rotation_matrix(theta - theta0)
+        gt_points_anchored.extend(anchor_pos + R @ p for p in gt_local)
+        pred_points_anchored.extend(anchor_pos + R @ p for p in pred_local)
+
+        prev_theta = theta
+        prev_gt_local = gt_local
+
+    plot_path = plot_trajectory_comparison(pred_points_anchored, gt_points_anchored, args.viz_dir)
+
     print(f"Smoke test passed: ran the full trajectory ({len(dataset)} steps) through "
           f"dataloader -> model forward pass. Debug images written to {args.viz_dir}")
+    print(f"Predicted-vs-ground-truth trajectory plot saved to {plot_path}")
 
 
 if __name__ == '__main__':

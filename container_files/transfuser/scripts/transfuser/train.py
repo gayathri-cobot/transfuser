@@ -186,15 +186,15 @@ def main():
       dataloader_val   = DataLoader(val_set,   shuffle=True, batch_size=args.batch_size, worker_init_fn=seed_worker, generator=g_cuda, num_workers=0, pin_memory=True)
 
     # Create logdir
-    if ((not os.path.isdir(args.logdir)) and (rank == 0)):
-        print('Created dir:', args.logdir, rank)
-        os.makedirs(args.logdir, exist_ok=True)
+    if ((not os.path.isdir('model_ckpt/' + args.logdir)) and (rank == 0)):
+        print('Created dir:', 'model_ckpt/' + args.logdir, rank)
+        os.makedirs('model_ckpt/' + args.logdir, exist_ok=True)
 
     # We only need one process to log the losses
     if(rank == 0):
-        writer = SummaryWriter(log_dir=args.logdir)
+        writer = SummaryWriter(log_dir='model_ckpt/' + args.logdir)
         # Log args
-        with open(os.path.join(args.logdir, 'args.txt'), 'w') as f:
+        with open(os.path.join('model_ckpt/' + args.logdir, 'args.txt'), 'w') as f:
             json.dump(args.__dict__, f, indent=2)
     else:
         writer = None
@@ -258,7 +258,7 @@ class Engine(object):
         self.rank = rank
         self.world_size = world_size
         self.parallel = parallel
-        self.vis_save_path = self.args.logdir + r'/visualizations'
+        self.vis_save_path = 'model_ckpt/' + self.args.logdir + r'/visualizations'
         if(self.config.debug == True):
             pathlib.Path(self.vis_save_path).mkdir(parents=True, exist_ok=True)
 
@@ -406,8 +406,9 @@ class Engine(object):
 
     def save(self):
         # NOTE saving the model with torch.save(model.module.state_dict(), PATH) if parallel processing is used would be cleaner, we keep it for backwards compatibility
-        torch.save(self.model.state_dict(), os.path.join(self.args.logdir, 'model_%d.pth' % self.cur_epoch))
-        torch.save(self.optimizer.state_dict(), os.path.join(self.args.logdir, 'optimizer_%d.pth' % self.cur_epoch))
+        os.makedirs('model_ckpt/', exist_ok=True)
+        torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'model_%d.pth' % self.cur_epoch))
+        torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'optimizer_%d.pth' % self.cur_epoch))
 
 # We need to seed the workers individually otherwise random processes in the dataloader return the same values across workers!
 def seed_worker(worker_id):
