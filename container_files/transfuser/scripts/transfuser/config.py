@@ -241,27 +241,15 @@ class GlobalConfig:
                     if not os.path.isfile(os.path.join(self.root_dir, file)):
                         self.val_data.append(os.path.join(self.root_dir, town, file))
 
-        elif (setting == '02_05_withheld'): #Town02 and 05 withheld during training
-            print("Skip Town02 and Town05")
-            self.train_towns = os.listdir(self.root_dir) #Scenario Folders
-            self.val_towns = self.train_towns # Town 02 and 05 get selected automatically below
+        elif (setting == 'validate'): # All route dirs collected here; train.py splits them 80:20 by route
+            self.train_towns = os.listdir(self.root_dir)
+            self.val_towns = []
             self.train_data, self.val_data = [], []
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((file.find('Town02') != -1) or (file.find('Town05') != -1)):  #We don't train on 05 and 02 to reserve them as test towns
-                        continue
                     if not os.path.isfile(os.path.join(self.root_dir, file)):
-                        print("Train Folder: ", file)
                         self.train_data.append(os.path.join(self.root_dir, town, file))
-            for town in self.val_towns:
-                root_files = os.listdir(os.path.join(self.root_dir, town))
-                for file in root_files:
-                    if ((file.find('Town02') == -1) and (file.find('Town05') == -1)): # Only use Town 02 and 05 for validation
-                        continue
-                    if not os.path.isfile(os.path.join(self.root_dir, file)):
-                        print("Val Folder: ", file)
-                        self.val_data.append(os.path.join(self.root_dir, town, file))
         elif (setting == 'eval'): #No training data needed during evaluation.
             pass
         else:

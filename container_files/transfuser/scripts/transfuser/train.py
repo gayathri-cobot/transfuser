@@ -42,18 +42,17 @@ def main():
     parser.add_argument('--load_file', type=str, default=None, help='ckpt to load.')
     parser.add_argument('--start_epoch', type=int, default=0, help='Epoch to start with. Useful when continuing ' \
     'trainings via load_file.')
-    parser.add_argument('--setting', type=str, default='all', help='What training setting to use. Options: '
+    parser.add_argument('--setting', type=str, default='validate', help='What training setting to use. Options: '
                                                                    'all: Train on all towns no validation data. '
-                                                                   '02_05_withheld: ' \
-                                                                   'Do not train on Town 02 and Town 05. Use the data ' \
-                                                                   'as validation data.')
+                                                                   'validate: ' \
+                                                                   'Split the data into training and validation sets in 80:20 ratio.')
     parser.add_argument('--root_dir', type=str, default=os.path.join(SCRIPT_DIR, '..', '..', 'data'), help='Root directory of your training data')
     parser.add_argument('--schedule', type=int, default=1,
                         help='Whether to train with a learning rate schedule. 1 = True')
     parser.add_argument('--schedule_reduce_epoch_01', type=int, default=30,
                         help='Epoch at which to reduce the lr by a factor of 10 the first time. Only used with '
                         '--schedule 1')
-    parser.add_argument('--schedule_reduce_epoch_02', type=int, default=40,
+    parser.add_argument('--schedule_reduce_epoch_02', type=int, default=70,
                         help='Epoch at which to reduce the lr by a factor of 10 the second time. Only used with '
                         '--schedule 1')
     parser.add_argument('--backbone', type=str, default='transFuser',
@@ -170,8 +169,16 @@ def main():
     print ('Total trainable parameters: ', params)
 
     # Data
-    train_set = IsaacSimData(root=config.train_data, config=config, shared_dict=shared_dict)
-    val_set   = IsaacSimData(root=config.val_data,   config=config, shared_dict=shared_dict)
+    # Split the list of route directories 80:20 (not individual frames). Windows within a
+    # route are temporally adjacent and overlap, so a frame-level split would leak near-identical
+    # samples across train/val. Splitting whole routes keeps the sets independent.
+    routes = sorted(config.train_data)
+    random.Random(42).shuffle(routes)  # fixed seed -> identical split across all ranks
+    split_idx = int(len(routes) * 0.8)
+    train_routes, val_routes = routes[:split_idx], routes[split_idx:]
+
+    train_set = IsaacSimData(root=train_routes, config=config, shared_dict=shared_dict)
+    val_set   = IsaacSimData(root=val_routes,   config=config, shared_dict=shared_dict)
 
     g_cuda = torch.Generator(device='cpu')
     g_cuda.manual_seed(torch.initial_seed())
@@ -269,6 +276,14 @@ class Engine(object):
             detailed_losses_weights = config.detailed_losses_weights
         self.detailed_weights = {key: detailed_losses_weights[idx] for idx, key in enumerate(self.detailed_losses)}
 
+    def save_best_model(self, val_loss):
+        if (val_loss < self.bestval):
+            self.bestval = val_loss
+            self.bestval_epoch = self.cur_epoch
+            print("Saving best model at epoch %d with val loss %.4f" % (self.cur_epoch, val_loss))
+            torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'best_model.pth'))
+            torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'best_optimizer.pth'))
+
     def load_data_compute_loss(self, data):
         # Move data to GPU
         rgb = data['rgb'].to(self.device, dtype=torch.float32)
@@ -365,9 +380,10 @@ class Engine(object):
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, 'val_')
+        self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, 'val_', validate = True)
+        
 
-    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, prefix=''):
+    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, prefix='', validate=False):
         # Average all the batches into one number
         loss_epoch = loss_epoch / num_batches
         for key, value in detailed_losses_epoch.items():
@@ -392,6 +408,8 @@ class Engine(object):
         if (self.rank == 0):
             # Log main loss
             aggregated_total_loss = sum(gathered_loss) / len(gathered_loss)
+            if validate:
+                self.save_best_model(aggregated_total_loss)
             self.writer.add_scalar(prefix + 'loss_total', aggregated_total_loss, self.cur_epoch)
 
             # Log detailed losses
