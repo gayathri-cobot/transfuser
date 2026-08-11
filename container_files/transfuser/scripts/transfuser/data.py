@@ -118,8 +118,8 @@ class IsaacSimData(Dataset):
         self.semantics    = np.array(self.semantics   ).astype(np.string_)
         self.lidars       = np.array(self.lidars      ).astype(np.string_)
         self.measurements = np.array(self.measurements).astype(np.string_)
-        print(self.images.shape)
-        print("Loading %d lidars from %d folders"%(len(self.lidars), len(root)))
+        # print(self.images.shape)
+        # print("Loading %d lidars from %d folders"%(len(self.lidars), len(root)))
 
     def __len__(self):
         """Returns the length of the dataset. """

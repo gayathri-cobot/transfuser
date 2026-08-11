@@ -49,12 +49,12 @@ def main():
     parser.add_argument('--root_dir', type=str, default=os.path.join(SCRIPT_DIR, '..', '..', 'data'), help='Root directory of your training data')
     parser.add_argument('--schedule', type=int, default=1,
                         help='Whether to train with a learning rate schedule. 1 = True')
-    parser.add_argument('--schedule_reduce_epoch_01', type=int, default=30,
-                        help='Epoch at which to reduce the lr by a factor of 10 the first time. Only used with '
-                        '--schedule 1')
-    parser.add_argument('--schedule_reduce_epoch_02', type=int, default=70,
-                        help='Epoch at which to reduce the lr by a factor of 10 the second time. Only used with '
-                        '--schedule 1')
+    # parser.add_argument('--schedule_reduce_epoch_01', type=int, default=30,
+    #                     help='Epoch at which to reduce the lr by a factor of 10 the first time. Only used with '
+    #                     '--schedule 1')
+    # parser.add_argument('--schedule_reduce_epoch_02', type=int, default=70,
+    #                     help='Epoch at which to reduce the lr by a factor of 10 the second time. Only used with '
+    #                     '--schedule 1')
     parser.add_argument('--backbone', type=str, default='transFuser',
                         help='Which Fusion backbone to use. Options: transFuser, late_fusion, latentTF, ' \
                         'geometric_fusion')
@@ -89,7 +89,7 @@ def main():
     parser.add_argument('--use_disk_cache', type=int, default=0, help='0: Do not cache the dataset 1: ' \
     'Cache the dataset on the disk pointed to by the SCRATCH enironment variable. Useful if the dataset is stored o' \
     'n slow HDDs and can be temporarily stored on faster SSD storage.')
-    parser.add_argument("--save_freq", type=int, default=10, help='The frequency at which the models are saved')
+    parser.add_argument("--save_freq", type=int, default=20, help='The frequency at which the models are saved')
 
 
     args = parser.parse_args()
@@ -120,7 +120,6 @@ def main():
         print(f"RANK, LOCAL_RANK and WORLD_SIZE in environ: {rank}/{local_rank}/{world_size}")
 
         device = torch.device('cuda:{}'.format(local_rank))
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank) # Hide devices that are not used by this process
 
         torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank,
                                              timeout=datetime.timedelta(minutes=15))
@@ -162,6 +161,8 @@ def main():
         optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=optim.AdamW, lr=args.lr) # Saves GPU memory during DDP training
     else:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr) # For single GPU training
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
 
 
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
@@ -210,10 +211,11 @@ def main():
         # Load checkpoint
         print("=============load=================")
         model.load_state_dict(torch.load(args.load_file, map_location=model.device))
-        optimizer.load_state_dict(torch.load(args.load_file.replace("model_", "optimizer_"), map_location=model.device))
+        optimizer.load_state_dict(torch.load(args.load_file.replace("_model", "_optimizer"), map_location=model.device))
+        scheduler.load_state_dict(torch.load(args.load_file.replace("_model", "_scheduler"), map_location=model.device))
 
 
-    trainer = Engine(model=model, optimizer=optimizer, dataloader_train=dataloader_train, dataloader_val=dataloader_val,
+    trainer = Engine(model=model, optimizer=optimizer, scheduler=scheduler, dataloader_train=dataloader_train, dataloader_val=dataloader_val,
                      args=args, config=config, writer=writer, device=device, rank=rank, world_size=world_size,
                      parallel=parallel, cur_epoch=args.start_epoch)
 
@@ -221,21 +223,22 @@ def main():
         if(parallel == True):
             # Update the seed depending on the epoch so that the distributed sampler will use different shuffles across different epochs
             sampler_train.set_epoch(epoch)
-        if ((epoch == args.schedule_reduce_epoch_01) or (epoch==args.schedule_reduce_epoch_02)) and (args.schedule == 1):
-            current_lr = optimizer.param_groups[0]['lr']
-            new_lr = current_lr * 0.1
-            print("Reduce learning rate by factor 10 to:", new_lr)
-            for g in optimizer.param_groups:
-                g['lr'] = new_lr
+        # if ((epoch == args.schedule_reduce_epoch_01) or (epoch==args.schedule_reduce_epoch_02)) and (args.schedule == 1):
+        #     current_lr = optimizer.param_groups[0]['lr']
+        #     new_lr = current_lr * 0.1
+        #     print("Reduce learning rate by factor 10 to:", new_lr)
+        #     for g in optimizer.param_groups:
+        #         g['lr'] = new_lr
         trainer.train()
 
         if((args.setting != 'all') and (epoch % args.val_every == 0)):
-            trainer.validate()
+            val_loss = trainer.validate()
+            scheduler.step(val_loss)
 
         if (parallel == True):
             if (bool(args.zero_redundancy_optimizer) == True):
                 optimizer.consolidate_state_dict(0) # To save the whole optimizer we need to gather it on GPU 0.
-            if (rank == 0):
+            if (rank == 0) and (epoch%args.save_freq==0 or epoch==args.epochs-1):
                 trainer.save()
         else:
             if epoch%args.save_freq==0 or epoch==args.epochs-1:
@@ -247,7 +250,7 @@ class Engine(object):
     Engine that runs training.
     """
 
-    def __init__(self, model, optimizer, dataloader_train, dataloader_val, args, config, writer, device, rank=0, 
+    def __init__(self, model, optimizer, scheduler, dataloader_train, dataloader_val, args, config, writer, device, rank=0,
                  world_size=1, parallel=False, cur_epoch=0):
         self.cur_epoch = cur_epoch
         self.bestval_epoch = cur_epoch
@@ -256,6 +259,7 @@ class Engine(object):
         self.bestval = 1e10
         self.model = model
         self.optimizer = optimizer
+        self.scheduler = scheduler
         self.dataloader_train = dataloader_train
         self.dataloader_val   = dataloader_val
         self.args = args
@@ -283,6 +287,7 @@ class Engine(object):
             print("Saving best model at epoch %d with val loss %.4f" % (self.cur_epoch, val_loss))
             torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'best_model.pth'))
             torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'best_optimizer.pth'))
+            torch.save(self.scheduler.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'best_scheduler.pth'))
 
     def load_data_compute_loss(self, data):
         # Move data to GPU
@@ -338,6 +343,7 @@ class Engine(object):
 
         num_batches = 0
         loss_epoch = 0.0
+        norm_epoch = 0.0    
         detailed_losses_epoch  = {key: 0.0 for key in self.detailed_losses}
         self.cur_epoch += 1
 
@@ -352,11 +358,14 @@ class Engine(object):
                 detailed_losses_epoch[key] += float(self.detailed_weights[key] * value.item())
             loss.backward()
 
+            norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
+            norm_epoch += float(norm.item())
+
             self.optimizer.step()
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        self.log_losses(loss_epoch, detailed_losses_epoch, num_batches, '')
+        self.log_losses(loss_epoch, detailed_losses_epoch, num_batches, total_norm=norm_epoch)
 
 
     @torch.inference_mode() # Faster version of torch_no_grad
@@ -380,12 +389,21 @@ class Engine(object):
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, 'val_', validate = True)
-        
+        val_loss = self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, prefix= 'val_', validate = True)
 
-    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, prefix='', validate=False):
+        if self.parallel:
+            # Only rank 0 has the true aggregated val loss (log_losses returns None elsewhere).
+            # Broadcast it so every rank's scheduler.step() sees the same value and their LRs stay in sync.
+            val_loss_tensor = torch.tensor(val_loss if self.rank == 0 else 0.0, device=self.device)
+            torch.distributed.broadcast(val_loss_tensor, src=0)
+            val_loss = val_loss_tensor.item()
+
+        return val_loss
+
+    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False):
         # Average all the batches into one number
         loss_epoch = loss_epoch / num_batches
+        total_norm = total_norm / num_batches if total_norm is not None else None
         for key, value in detailed_losses_epoch.items():
             detailed_losses_epoch[key] = value / num_batches
 
@@ -411,6 +429,8 @@ class Engine(object):
             if validate:
                 self.save_best_model(aggregated_total_loss)
             self.writer.add_scalar(prefix + 'loss_total', aggregated_total_loss, self.cur_epoch)
+            if total_norm is not None:
+                self.writer.add_scalar(prefix + 'grad_norm', total_norm, self.cur_epoch)
 
             # Log detailed losses
             for key, value in detailed_losses_epoch.items():
@@ -422,11 +442,15 @@ class Engine(object):
 
                 self.writer.add_scalar(prefix + key, aggregated_value, self.cur_epoch)
 
+            return aggregated_total_loss
+        return None
+
     def save(self):
         # NOTE saving the model with torch.save(model.module.state_dict(), PATH) if parallel processing is used would be cleaner, we keep it for backwards compatibility
         os.makedirs('model_ckpt/', exist_ok=True)
         torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'model_%d.pth' % self.cur_epoch))
         torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'optimizer_%d.pth' % self.cur_epoch))
+        torch.save(self.scheduler.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'scheduler_%d.pth' % self.cur_epoch))
 
 # We need to seed the workers individually otherwise random processes in the dataloader return the same values across workers!
 def seed_worker(worker_id):
