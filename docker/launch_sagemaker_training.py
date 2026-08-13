@@ -17,6 +17,7 @@ current setup (see the SageMaker plan this script was built from); override
 via flags if any of that changes.
 """
 import argparse
+import json
 import time
 
 import boto3
@@ -29,6 +30,63 @@ DEFAULT_ROLE_ARN = f"arn:aws:iam::{DEFAULT_ACCOUNT_ID}:role/transfuser-sagemaker
 DEFAULT_DATA_S3_URI = "s3://e2e-local-nav-processed-938145530947-us-west-2-an/"
 DEFAULT_OUTPUT_S3_URI = "s3://e2e-local-nav-model-weights/sagemaker/transfuser"
 DEFAULT_ENTRYPOINT = "/workspace/container/entrypoint_sagemaker_train.sh"
+DEFAULT_EXCLUDE_TOWNS = ["scenario_1/"]
+MANIFEST_KEY = "_manifests/train_manifest.json"
+
+
+def list_top_level_prefixes(s3, bucket):
+    """List the bucket's top-level 'town' prefixes (e.g. 'scenario_2/'), handling pagination."""
+    prefixes = []
+    token = None
+    while True:
+        kwargs = dict(Bucket=bucket, Delimiter="/")
+        if token:
+            kwargs["ContinuationToken"] = token
+        resp = s3.list_objects_v2(**kwargs)
+        prefixes.extend(cp["Prefix"] for cp in resp.get("CommonPrefixes", []))
+        if not resp.get("IsTruncated"):
+            break
+        token = resp["NextContinuationToken"]
+    return prefixes
+
+
+def list_all_keys(s3, bucket, exclude_prefixes):
+    """List every object key in the bucket, skipping keys under exclude_prefixes.
+    SageMaker's ManifestFile format only accepts literal object keys, not
+    directory-style trailing-slash prefixes (verified empirically - a manifest
+    of trailing-slash entries downloads zero files even though the job reports
+    a successful 'Downloading' phase)."""
+    keys = []
+    token = None
+    while True:
+        kwargs = dict(Bucket=bucket)
+        if token:
+            kwargs["ContinuationToken"] = token
+        resp = s3.list_objects_v2(**kwargs)
+        for obj in resp.get("Contents", []):
+            key = obj["Key"]
+            if not any(key.startswith(p) for p in exclude_prefixes):
+                keys.append(key)
+        if not resp.get("IsTruncated"):
+            break
+        token = resp["NextContinuationToken"]
+    return keys
+
+
+def build_train_manifest(s3, bucket, exclude_towns, upload=True):
+    """List every object key in the bucket except those under exclude_towns and this
+    script's own scratch prefix, and optionally upload the SageMaker manifest JSON.
+    Returns (manifest_s3_uri, included_town_prefixes) - included_town_prefixes is just
+    for the printed summary, not part of the manifest itself."""
+    exclude = set(exclude_towns) | {MANIFEST_KEY.split("/")[0] + "/"}
+    all_town_prefixes = list_top_level_prefixes(s3, bucket)
+    included_towns = [p for p in all_town_prefixes if p not in exclude]
+    keys = list_all_keys(s3, bucket, exclude)
+    manifest = [{"prefix": f"s3://{bucket}/"}] + keys
+    manifest_uri = f"s3://{bucket}/{MANIFEST_KEY}"
+    if upload:
+        s3.put_object(Bucket=bucket, Key=MANIFEST_KEY, Body=json.dumps(manifest).encode("utf-8"), ContentType="application/json")
+    return manifest_uri, included_towns, len(keys)
 
 
 def parse_args():
@@ -40,6 +98,10 @@ def parse_args():
     p.add_argument("--ecr-repo", default=DEFAULT_ECR_REPO)
     p.add_argument("--role-arn", default=DEFAULT_ROLE_ARN)
     p.add_argument("--data-s3-uri", default=DEFAULT_DATA_S3_URI, help="root_dir S3 prefix; mounted as the 'train' channel")
+    p.add_argument("--exclude-town", nargs="*", default=DEFAULT_EXCLUDE_TOWNS,
+                    help="Top-level town prefixes to skip when pulling from S3 (only applies to the default "
+                         "--data-s3-uri bucket; ignored for a custom --data-s3-uri). Default: scenario_1/ only "
+                         "- scenario_1_2026-07-29/, scenario_1_gray/, scenario_1_lit/ etc. are NOT excluded.")
     p.add_argument("--output-s3-uri", default=DEFAULT_OUTPUT_S3_URI)
     p.add_argument("--instance-type", default="ml.g6e.12xlarge", help="4x L40S")
     p.add_argument("--instance-count", type=int, default=1)
@@ -77,6 +139,22 @@ def build_container_arguments(args):
     return container_args
 
 
+def build_data_source(args):
+    """S3Prefix for a custom --data-s3-uri (e.g. a smoke-test subset); a generated
+    ManifestFile for the default bucket so --exclude-town can skip specific towns
+    (S3Prefix mode has no exclusion mechanism)."""
+    if args.data_s3_uri != DEFAULT_DATA_S3_URI or not args.exclude_town:
+        return dict(S3DataType="S3Prefix", S3Uri=args.data_s3_uri, S3DataDistributionType="FullyReplicated")
+
+    bucket = DEFAULT_DATA_S3_URI[len("s3://"):].rstrip("/")
+    exclude_towns = [t if t.endswith("/") else t + "/" for t in args.exclude_town]
+    s3 = boto3.client("s3", region_name=args.region)
+    manifest_uri, included_towns, num_keys = build_train_manifest(s3, bucket, exclude_towns, upload=not args.dry_run)
+    print(f"Excluding towns: {exclude_towns}")
+    print(f"Manifest includes {len(included_towns)} towns, {num_keys} objects: {included_towns}")
+    return dict(S3DataType="ManifestFile", S3Uri=manifest_uri, S3DataDistributionType="FullyReplicated")
+
+
 def main():
     args = parse_args()
     job_name = args.job_name or f"transfuser-train-{time.strftime('%Y-%m-%d-%H-%M-%S')}"
@@ -94,13 +172,7 @@ def main():
         InputDataConfig=[
             dict(
                 ChannelName="train",
-                DataSource=dict(
-                    S3DataSource=dict(
-                        S3DataType="S3Prefix",
-                        S3Uri=args.data_s3_uri,
-                        S3DataDistributionType="FullyReplicated",
-                    )
-                ),
+                DataSource=dict(S3DataSource=build_data_source(args)),
             )
         ],
         OutputDataConfig=dict(S3OutputPath=args.output_s3_uri),
@@ -113,7 +185,6 @@ def main():
     )
 
     if args.dry_run:
-        import json
         print(json.dumps(request, indent=2))
         return
 
