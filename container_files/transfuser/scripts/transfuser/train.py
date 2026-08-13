@@ -162,7 +162,7 @@ def main():
     else:
         optimizer = optim.AdamW(model.parameters(), lr=args.lr) # For single GPU training
 
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2)
 
 
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
@@ -181,6 +181,7 @@ def main():
 
     train_set = IsaacSimData(root=train_routes, config=config, shared_dict=shared_dict)
     val_set   = IsaacSimData(root=val_routes,   config=config, shared_dict=shared_dict)
+    print("Train set size: ", len(train_set), "Val set size: ", len(val_set))
 
     g_cuda = torch.Generator(device='cpu')
     g_cuda.manual_seed(torch.initial_seed())

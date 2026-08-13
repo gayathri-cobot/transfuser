@@ -249,7 +249,7 @@ class GlobalConfig:
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((file.find('scenario_5') != -1) or (file.find('scenario_6') != -1) or (file.find('scenario_8') != -1) or (file.find('scenario_8_lit') != -1)):  #We don't train on 05 and 02 to reserve them as test towns
+                    if ((town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1)):  #We don't train on 05 and 02 to reserve them as test towns
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Train Folder: ", file)
@@ -260,7 +260,7 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    if ((file.find('scenario_5') == -1) and (file.find('scenario_6') == -1) and (file.find('scenario_8') == -1) and (file.find('scenario_8_lit') == -1)): # Only use Scenario 5, 6, 8, and 8 (lit) for validation
+                    if ((town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1)): # Only use Scenario 5, 6, 8, and 8 (lit) for validation
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Val Folder: ", file)
