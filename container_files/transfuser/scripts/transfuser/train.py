@@ -173,10 +173,11 @@ def main():
     # Split the list of route directories 80:20 (not individual frames). Windows within a
     # route are temporally adjacent and overlap, so a frame-level split would leak near-identical
     # samples across train/val. Splitting whole routes keeps the sets independent.
-    routes = sorted(config.train_data)
-    random.Random(42).shuffle(routes)  # fixed seed -> identical split across all ranks
-    split_idx = int(len(routes) * 0.8)
-    train_routes, val_routes = routes[:split_idx], routes[split_idx:]
+    train_routes = (config.train_data)
+    val_routes   = (config.val_data)
+    # random.Random(42).shuffle(routes)  # fixed seed -> identical split across all ranks
+    # split_idx = int(len(routes) * 0.8)
+    # train_routes, val_routes = routes[:split_idx], routes[split_idx:]
 
     train_set = IsaacSimData(root=train_routes, config=config, shared_dict=shared_dict)
     val_set   = IsaacSimData(root=val_routes,   config=config, shared_dict=shared_dict)
@@ -210,9 +211,11 @@ def main():
     if (not (args.load_file is None)):
         # Load checkpoint
         print("=============load=================")
-        model.load_state_dict(torch.load(args.load_file, map_location=model.device))
-        optimizer.load_state_dict(torch.load(args.load_file.replace("_model", "_optimizer"), map_location=model.device))
-        scheduler.load_state_dict(torch.load(args.load_file.replace("_model", "_scheduler"), map_location=model.device))
+        path = 'model_ckpt/' + args.load_file
+        print("Loading checkpoint from:", path)
+        model.load_state_dict(torch.load(path, map_location=model.device))
+        optimizer.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "optimizer_"), map_location=model.device))
+        scheduler.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "scheduler_"), map_location=model.device))
 
 
     trainer = Engine(model=model, optimizer=optimizer, scheduler=scheduler, dataloader_train=dataloader_train, dataloader_val=dataloader_val,

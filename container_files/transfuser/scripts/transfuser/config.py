@@ -243,13 +243,28 @@ class GlobalConfig:
 
         elif (setting == 'validate'): # All route dirs collected here; train.py splits them 80:20 by route
             self.train_towns = os.listdir(self.root_dir)
-            self.val_towns = []
+            self.val_towns = self.train_towns
             self.train_data, self.val_data = [], []
+            print("Adding Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit) to validation data")
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if not os.path.isfile(os.path.join(self.root_dir, file)):
+                    if ((file.find('scenario_5') != -1) or (file.find('scenario_6') != -1) or (file.find('scenario_8') != -1) or (file.find('scenario_8_lit') != -1)):  #We don't train on 05 and 02 to reserve them as test towns
+                        continue
+                    if not os.path.isfile(os.path.join(self.root_dir, town, file)):
+                        print("Train Folder: ", file)
                         self.train_data.append(os.path.join(self.root_dir, town, file))
+                # for file in root_files:
+                #     if not os.path.isfile(os.path.join(self.root_dir, file)):
+                #         self.train_data.append(os.path.join(self.root_dir, town, file))
+            for town in self.val_towns:
+                root_files = os.listdir(os.path.join(self.root_dir, town))
+                for file in root_files:
+                    if ((file.find('scenario_5') == -1) and (file.find('scenario_6') == -1) and (file.find('scenario_8') == -1) and (file.find('scenario_8_lit') == -1)): # Only use Scenario 5, 6, 8, and 8 (lit) for validation
+                        continue
+                    if not os.path.isfile(os.path.join(self.root_dir, town, file)):
+                        print("Val Folder: ", file)
+                        self.val_data.append(os.path.join(self.root_dir, town, file))
         elif (setting == 'eval'): #No training data needed during evaluation.
             pass
         else:
