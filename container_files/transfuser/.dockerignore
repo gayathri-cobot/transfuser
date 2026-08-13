@@ -1,0 +1,5 @@
+data/
+model_ckpt/
+scripts/model_ckpt/
+scripts/__pycache__/
+scripts/transfuser/__pycache__/

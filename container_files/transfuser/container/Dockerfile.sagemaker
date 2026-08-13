@@ -1,0 +1,20 @@
+# SageMaker training image for TransFuser.
+# Extends the same apollo-nav-standalone image run_transfuser.sh uses for SIL,
+# skipping the ROS2/Apollo/DDS setup entrypoint_sil.sh does (irrelevant for training).
+FROM 458214780330.dkr.ecr.us-west-2.amazonaws.com/apollo-nav-standalone:latest
+
+# Stay as the base image's default 'cobot' user (do not switch to root):
+# diskcache/open3d/torchvision etc. are already installed into cobot's
+# --user site-packages, not the system dist-packages, so switching users
+# would make those invisible. cobot has passwordless sudo (same as
+# entrypoint_sil.sh uses) for the /opt/ml/model permission fixup at runtime.
+#
+# Only packages missing from the base image (see entrypoint_sil.sh step 6b) -
+# everything else train.py's import graph needs (torch, torchvision, opencv-python,
+# Pillow, matplotlib, numpy, diskcache, einops, open3d) is already baked in.
+RUN pip3 install --no-cache-dir timm scikit-image tensorboard
+
+COPY . /workspace
+WORKDIR /workspace
+
+ENTRYPOINT ["/workspace/container/entrypoint_sagemaker_train.sh"]
