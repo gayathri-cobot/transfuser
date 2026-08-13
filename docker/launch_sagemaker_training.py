@@ -118,6 +118,7 @@ def parse_args():
     p.add_argument("--backbone", default="transFuser", choices=["transFuser", "late_fusion", "latentTF", "geometric_fusion"])
     p.add_argument("--val-every", type=int, default=5)
     p.add_argument("--save-freq", type=int, default=20)
+    p.add_argument("--logdir", default="log", help="train.py --logdir; checkpoints land under model_ckpt/<logdir>/<id>/")
     p.add_argument("--extra-args", nargs=argparse.REMAINDER, default=[], help="Any additional train.py flags, passed through verbatim")
     return p.parse_args()
 
@@ -134,6 +135,7 @@ def build_container_arguments(args):
         "--backbone", args.backbone,
         "--val_every", str(args.val_every),
         "--save_freq", str(args.save_freq),
+        "--logdir", args.logdir,
     ]
     container_args.extend(args.extra_args)
     return container_args
@@ -159,6 +161,7 @@ def main():
     args = parse_args()
     job_name = args.job_name or f"transfuser-train-{time.strftime('%Y-%m-%d-%H-%M-%S')}"
     image_uri = f"{args.account_id}.dkr.ecr.{args.region}.amazonaws.com/{args.ecr_repo}:{args.tag}"
+    checkpoint_s3_uri = f"{args.output_s3_uri}/{job_name}/checkpoints"
 
     request = dict(
         TrainingJobName=job_name,
@@ -176,6 +179,12 @@ def main():
             )
         ],
         OutputDataConfig=dict(S3OutputPath=args.output_s3_uri),
+        # entrypoint_sagemaker_train.sh points model_ckpt at CHECKPOINT_DIR
+        # (/opt/ml/checkpoints, matched by not passing LocalPath here so the
+        # SageMaker default applies), which SageMaker syncs to this S3 URI
+        # continuously during training - not just at job end like the final
+        # model.tar.gz artifact. This is what makes live TensorBoard possible.
+        CheckpointConfig=dict(S3Uri=checkpoint_s3_uri),
         ResourceConfig=dict(
             InstanceType=args.instance_type,
             InstanceCount=args.instance_count,
@@ -191,8 +200,9 @@ def main():
     sm = boto3.client("sagemaker", region_name=args.region)
     resp = sm.create_training_job(**request)
     print(f"Launched training job: {job_name}")
-    print(f"  Image:  {image_uri}")
-    print(f"  ARN:    {resp['TrainingJobArn']}")
+    print(f"  Image:      {image_uri}")
+    print(f"  ARN:        {resp['TrainingJobArn']}")
+    print(f"  Checkpoints (live, synced every ~minute during training): {checkpoint_s3_uri}")
     print(f"  Monitor: aws sagemaker describe-training-job --training-job-name {job_name} --region {args.region}")
 
 
