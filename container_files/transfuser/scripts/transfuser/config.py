@@ -224,8 +224,10 @@ class GlobalConfig:
     clip_delta = 0.25 # maximum change in speed input to logitudinal controller
     clip_throttle = 0.75 # Maximum throttle allowed by the controller
 
-    def __init__(self, root_dir='', setting='all', **kwargs):
+    def __init__(self, root_dir='', setting='all', eval_scenario='scenario_1', eval_route=None, **kwargs):
         self.root_dir = root_dir
+        self.eval_scenario = eval_scenario
+        self.eval_route = eval_route
         if (setting == 'all'): # All towns used for training no validation data
             self.train_towns = os.listdir(self.root_dir)
             self.val_towns = [self.train_towns[0]]
@@ -266,7 +268,22 @@ class GlobalConfig:
                         print("Val Folder: ", file)
                         self.val_data.append(os.path.join(self.root_dir, town, file))
         elif (setting == 'eval'): #No training data needed during evaluation.
-            pass
+            self.eval_towns = os.listdir(self.root_dir)
+            self.eval_data = []
+            for town in self.eval_towns:
+                root_files = os.listdir(os.path.join(self.root_dir, town))
+                for file in root_files:
+                    if (town.find(self.eval_scenario) == -1):
+                        continue
+                    if not os.path.isfile(os.path.join(self.root_dir, town, file)):
+                        print(file)
+                        if (self.eval_route is not None):
+                            if (file.find(self.eval_route) == -1):
+                                continue
+                            else:
+                                self.eval_data.append(os.path.join(self.root_dir, town, file))
+                        else:
+                            self.eval_data.append(os.path.join(self.root_dir, town, file))
         else:
             print("Error: Selected setting: ", setting, " does not exist.")
 

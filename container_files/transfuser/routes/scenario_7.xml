@@ -22,16 +22,54 @@
 
   <route id="1" leg_by_leg="true"
          description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
-    <start x="46.5" y="72.0" z="0.0" yaw="90.0" />
-    <waypoint x="46.5" y="74.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="76.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="78.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="80.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="82.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="84.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="86.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="88.0" yaw="90.0" description="lane_1" />
-    <waypoint x="46.5" y="91.0" yaw="90.0" description="lane_1" />
+    <start x="46.0" y="72.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="74.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="76.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="78.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="80.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="82.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="84.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="88.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="91.0" yaw="90.0" description="lane_1" />
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="91.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="88.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="84.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="82.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="80.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="78.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="76.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="74.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="72.0" yaw="270.0" description="lane_1" />
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="78.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="80.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="82.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="84.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="90.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="94.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.0" y="95.0" yaw="90.0" description="lane_1" />
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="95.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="93.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="91.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="89.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="88.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="86.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="84.0" yaw="270.0" description="lane_1" />
+    <waypoint x="46.0" y="82.0" yaw="270.0" description="lane_1" />
   </route>
 
   

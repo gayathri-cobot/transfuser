@@ -173,5 +173,11 @@ container_files/transfuser/data
 container_files/transfuser/with_vel_log
 container_files/transfuser/with_vel_log_1
 container_files/transfuser/viz
+container_files/transfuser/model_ckpt
 
 corridor3_w2_route5_180308/
+container_files/transfuser/scripts/test_depth_2.py
+container_files/transfuser/scripts/test_depth.py
+
+# Local scratch for segmentation regeneration (masks + debug overlays)
+.seg_regen/

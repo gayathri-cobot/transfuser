@@ -85,8 +85,13 @@ def _snap_yaw_deg(yaw_deg):
     return int(round(yaw_deg / 90.0) * 90) % 360
 
 
-def save_segmented_images(output_path):
-    """Segment images into occupied and free space using a pre-trained model."""
+def save_segmented_images(output_path, geometric_filter=True):
+    """Segment images into occupied and free space using a pre-trained model.
+
+    geometric_filter=False keeps the raw reachable-floor component, skipping the
+    yaw-dependent diagonal/left crops below. Those crops were tuned for the
+    scenario_7/scenario_8 corridors and do not apply to every run.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     image_processor = AutoImageProcessor.from_pretrained("nvidia/segformer-b5-finetuned-ade-640-640", use_fast=True)
@@ -151,7 +156,10 @@ def save_segmented_images(output_path):
 
         floor_mask = _largest_reachable_component(floor)
 
-        if yaw in (0, 90):
+        if not geometric_filter:
+            pass
+
+        elif yaw in (0, 90):
             #define the filter
             fh, fw = floor_mask.shape
             xs = np.arange(fw)[None, :]
@@ -190,7 +198,9 @@ def save_segmented_images(output_path):
             # opaque = barrier & ~glass
             overlay[floor_mask] = (0.5 * overlay[floor_mask] + 0.5 * np.array([0, 255, 0])).astype(np.uint8)
             oh, ow = overlay.shape[:2]
-            if yaw in (0, 90):
+            if not geometric_filter:
+                pass
+            elif yaw in (0, 90):
                 cv2.line(overlay, (0, oh - 1),
                      (ow-1, 0), (255, 0, 255), 2)
             else:
@@ -214,9 +224,12 @@ def save_segmented_images(output_path):
 def main():
     parser = argparse.ArgumentParser(description="Segment images into occupied and free space using a pre-trained model.")
     parser.add_argument("data_path", type=str, help="Path to the data directory containing the bag files.")
+    parser.add_argument("--no-geometric-filter", dest="geometric_filter", action="store_false",
+                        help="Skip the yaw-dependent diagonal/left crops (they are tuned for the "
+                             "scenario_7/scenario_8 corridors).")
 
     args = parser.parse_args()
-    save_segmented_images(args.data_path)
+    save_segmented_images(args.data_path, geometric_filter=args.geometric_filter)
 
 if __name__ == "__main__":
     main()

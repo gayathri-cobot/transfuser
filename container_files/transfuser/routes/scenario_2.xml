@@ -38,5 +38,41 @@
     <waypoint x="46.0" y="95.5" yaw="0.0" description="lane_entrance" />
   </route>
 
+  <route id="3" leg_by_leg="true"
+         description="Drive WEST along the y=94.5 corridor, from x=46 to x=34. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="47.0" y="95.5" z="0.0" yaw="180.0" />
+    <waypoint x="45.0" y="95.5" yaw="180.0" description="lane_1" />
+    <waypoint x="43.0" y="95.5" yaw="180.0" description="lane_2" />
+    <waypoint x="41.0" y="95.5" yaw="180.0" description="lane_3" />
+    <waypoint x="39.5" y="95.5" yaw="180.0" description="lane_exit" />
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the west end (x=34) and drive EAST back along the y=94.5 corridor to x=46.">
+    <start x="39.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="41.0" y="95.5" yaw="0.0" description="lane_3" />
+    <waypoint x="43.0" y="95.5" yaw="0.0" description="lane_2" />
+    <waypoint x="45.0" y="95.5" yaw="0.0" description="lane_1" />
+    <waypoint x="46.0" y="95.5" yaw="0.0" description="lane_entrance" />
+  </route>
+
+  <route id="5" leg_by_leg="true"
+         description="Drive WEST along the y=94.5 corridor, from x=46 to x=34. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="95.5" z="0.0" yaw="180.0" />
+    <waypoint x="45.0" y="95.5" yaw="180.0" description="lane_1" />
+    <waypoint x="43.0" y="95.5" yaw="180.0" description="lane_2" />
+    <waypoint x="41.0" y="95.5" yaw="180.0" description="lane_3" />
+    <waypoint x="39.5" y="95.5" yaw="180.0" description="lane_exit" />
+  </route>
+
+  <route id="6" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the west end (x=34) and drive EAST back along the y=94.5 corridor to x=46.">
+    <start x="39.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="41.0" y="95.5" yaw="0.0" description="lane_3" />
+    <waypoint x="43.0" y="95.5" yaw="0.0" description="lane_2" />
+    <waypoint x="45.0" y="95.5" yaw="0.0" description="lane_1" />
+    <waypoint x="46.0" y="95.5" yaw="0.0" description="lane_entrance" />
+  </route>
+
 
 </routes>

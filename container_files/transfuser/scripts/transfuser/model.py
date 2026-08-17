@@ -895,7 +895,7 @@ class LidarCenterNet(nn.Module):
         self.i += 1
         
         if debug and self.i % 2 != 0 and not (save_path is None):
-            print("Saving now")
+            # print("Saving now")
             pred_bev = self.pred_bev(features[0])
             pred_bev = F.interpolate(pred_bev, (self.config.bev_resolution_height, self.config.bev_resolution_width), mode='bilinear', align_corners=True)
             pred_semantic = self.seg_decoder(image_features_grid)

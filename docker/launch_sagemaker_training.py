@@ -111,7 +111,7 @@ def parse_args():
 
     # train.py flags, passed straight through as container arguments.
     p.add_argument("--id", default="transfuser")
-    p.add_argument("--epochs", type=int, default=41)
+    p.add_argument("--epochs", type=int, default=101)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--batch-size", type=int, default=12, help="Per-GPU; effective batch size = this * num_gpus")
     p.add_argument("--setting", default="validate", choices=["all", "validate"])

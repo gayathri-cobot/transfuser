@@ -20,15 +20,41 @@
 -->
 <routes scenario="scenario_8">
 
+  <route id="2" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="40.0" y="71.0" z="0.0" yaw="0.0" />
+    <waypoint x="42.0" y="71.0" yaw="0.0" description="lane_1" />
+    <waypoint x="44.0" y="71.0" yaw="0.0" description="lane_1" />
+    <waypoint x="46.0" y="71.0" yaw="0.0" description="lane_1" />
+    
+  </route>
+
   <route id="1" leg_by_leg="true"
          description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
-    <start x="36.0" y="70.0" z="0.0" yaw="0.0" />
-    <waypoint x="38.0" y="70.0" yaw="0.0" description="lane_1" />
-    <waypoint x="40.0" y="70.0" yaw="0.0" description="lane_1" />
-    <waypoint x="42.0" y="70.0" yaw="0.0" description="lane_1" />
-    <waypoint x="44.0" y="70.0" yaw="0.0" description="lane_1" />
-    <waypoint x="46.0" y="70.0" yaw="0.0" description="lane_1" />
-    <waypoint x="48.0" y="70.0" yaw="0.0" description="lane_1" />
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="46.0" y="71.0" yaw="180.0" description="lane_1" />
+    <waypoint x="44.0" y="71.0" yaw="180.0" description="lane_1" />
+    <waypoint x="42.0" y="71.0" yaw="180.0" description="lane_1" />
+    <waypoint x="40.0" y="71.0" yaw="180.0" description="lane_1" />
+    
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="40.0" y="71.5" z="0.0" yaw="0.0" />
+    <waypoint x="42.0" y="71.5" yaw="0.0" description="lane_1" />
+    <waypoint x="44.0" y="71.5" yaw="0.0" description="lane_1" />
+    <waypoint x="46.0" y="71.5" yaw="0.0" description="lane_1" />
+    
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Straight drive north up the x=46 lane, through the corridor. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.5" z="0.0" yaw="180.0" />
+    <waypoint x="46.0" y="71.5" yaw="180.0" description="lane_1" />
+    <waypoint x="44.0" y="71.5" yaw="180.0" description="lane_1" />
+    <waypoint x="42.0" y="71.5" yaw="180.0" description="lane_1" />
+    <waypoint x="40.0" y="71.5" yaw="180.0" description="lane_1" />
     
   </route>
 
