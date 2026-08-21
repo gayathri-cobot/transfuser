@@ -236,8 +236,8 @@ def main():
         trainer.train()
 
         if((args.setting != 'all') and (epoch % args.val_every == 0)):
-            val_loss = trainer.validate()
-            scheduler.step(val_loss)
+            val_loss, wp_loss = trainer.validate()
+            scheduler.step(wp_loss)
 
         if (parallel == True):
             if (bool(args.zero_redundancy_optimizer) == True):
@@ -393,16 +393,17 @@ class Engine(object):
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        val_loss = self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, prefix= 'val_', validate = True)
+        val_loss, wp_loss = self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, prefix= 'val_', validate = True)
 
         if self.parallel:
             # Only rank 0 has the true aggregated val loss (log_losses returns None elsewhere).
             # Broadcast it so every rank's scheduler.step() sees the same value and their LRs stay in sync.
-            val_loss_tensor = torch.tensor(val_loss if self.rank == 0 else 0.0, device=self.device)
-            torch.distributed.broadcast(val_loss_tensor, src=0)
-            val_loss = val_loss_tensor.item()
+            metrics = torch.tensor([val_loss if self.rank == 0 else 0.0,
+                            wp_loss  if self.rank == 0 else 0.0], device=self.device)
+            torch.distributed.broadcast(metrics, src=0)
+            val_loss, wp_loss = metrics[0].item(), metrics[1].item()
 
-        return val_loss
+        return val_loss, wp_loss
 
     def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False):
         # Average all the batches into one number
@@ -430,24 +431,21 @@ class Engine(object):
         if (self.rank == 0):
             # Log main loss
             aggregated_total_loss = sum(gathered_loss) / len(gathered_loss)
-            if validate:
-                self.save_best_model(aggregated_total_loss)
             self.writer.add_scalar(prefix + 'loss_total', aggregated_total_loss, self.cur_epoch)
             if total_norm is not None:
                 self.writer.add_scalar(prefix + 'grad_norm', total_norm, self.cur_epoch)
+            aggregated_detailed = {}
+            for key in detailed_losses_epoch:
+                aggregated_detailed[key] = sum(gathered_detailed_losses[i][key]
+                                            for i in range(self.world_size)) / self.world_size
+                self.writer.add_scalar(prefix + key, aggregated_detailed[key], self.cur_epoch)
 
-            # Log detailed losses
-            for key, value in detailed_losses_epoch.items():
-                aggregated_value = 0.0
-                for i in range(self.world_size):
-                    aggregated_value += gathered_detailed_losses[i][key]
+            wp_loss = aggregated_detailed['loss_wp']
+            if validate:
+                self.save_best_model(wp_loss)
 
-                aggregated_value = aggregated_value / self.world_size
-
-                self.writer.add_scalar(prefix + key, aggregated_value, self.cur_epoch)
-
-            return aggregated_total_loss
-        return None
+            return aggregated_total_loss, wp_loss
+        return None, None
 
     def save(self):
         # NOTE saving the model with torch.save(model.module.state_dict(), PATH) if parallel processing is used would be cleaner, we keep it for backwards compatibility

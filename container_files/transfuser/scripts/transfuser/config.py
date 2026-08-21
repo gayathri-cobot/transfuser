@@ -30,7 +30,7 @@ class GlobalConfig:
     bev_resolution_height = 300 # Height resoultion the BEV loss is upsampled to. Double check if width and height are swapped if you want to make them non symmetric.
     use_target_point_image = False
     gru_concat_target_point = True
-    augment = False
+    augment = True
     inv_augment_prob = 0.1 # Probablity that data augmentation is applied is 1.0 - inv_augment_prob
     aug_max_rotation = 20 # degree
     debug = False # If true the model in and outputs will be visualized and saved into Os variable Save_Path
@@ -167,30 +167,30 @@ class GlobalConfig:
     deconv_scale_factor_1 = 8 # Scale factor, of how much the grid size will be interpolated after the first layer
     deconv_scale_factor_2 = 4 # Scale factor, of how much the grid size will be interpolated after the second layer
 
-    gps_buffer_max_len = 100 # Number of past gps measurements that we track.
-    carla_frame_rate = 1.0 / 20.0 # CARLA frame rate in milliseconds
-    carla_fps = 20 # Simulator Frames per second
-    iou_treshold_nms = 0.2  # Iou threshold used for Non Maximum suppression on the Bounding Box predictions for the ensembles
-    steer_damping = 0.5 # Damping factor by which the steering will be multiplied when braking
-    route_planner_min_distance = 7.5
-    route_planner_max_distance = 50.0
-    action_repeat = 2 # Number of times we repeat the networks action. It's 2 because the LiDAR operates at half the frame rate of the simulation
-    stuck_threshold = 1100/action_repeat # Number of frames after which the creep controller starts triggering. Divided by
-    creep_duration = 30 / action_repeat # Number of frames we will creep forward
+    # gps_buffer_max_len = 100 # Number of past gps measurements that we track.
+    # carla_frame_rate = 1.0 / 20.0 # CARLA frame rate in milliseconds
+    # carla_fps = 20 # Simulator Frames per second
+    # iou_treshold_nms = 0.2  # Iou threshold used for Non Maximum suppression on the Bounding Box predictions for the ensembles
+    # steer_damping = 0.5 # Damping factor by which the steering will be multiplied when braking
+    # route_planner_min_distance = 7.5
+    # route_planner_max_distance = 50.0
+    # action_repeat = 2 # Number of times we repeat the networks action. It's 2 because the LiDAR operates at half the frame rate of the simulation
+    # stuck_threshold = 1100/action_repeat # Number of frames after which the creep controller starts triggering. Divided by
+    # creep_duration = 30 / action_repeat # Number of frames we will creep forward
 
     # Size of the safety box
-    safety_box_z_min = -2.0
-    safety_box_z_max = -1.05
+    # safety_box_z_min = -2.0
+    # safety_box_z_max = -1.05
 
-    safety_box_y_min = -3.0
-    safety_box_y_max = 0.0
+    # safety_box_y_min = -3.0
+    # safety_box_y_max = 0.0
 
-    safety_box_x_min = -1.066
-    safety_box_x_max = 1.066
+    # safety_box_x_min = -1.066
+    # safety_box_x_max = 1.066
 
-    ego_extent_x = 2.4508416652679443 # Half the length of the ego car in x direction
-    ego_extent_y = 1.0641621351242065 # Half the length of the ego car in x direction
-    ego_extent_z = 0.7553732395172119 # Half the length of the ego car in x direction
+    # ego_extent_x = 2.4508416652679443 # Half the length of the ego car in x direction
+    # ego_extent_y = 1.0641621351242065 # Half the length of the ego car in x direction
+    # ego_extent_z = 0.7553732395172119 # Half the length of the ego car in x direction
 
 	# GPT Encoder
     n_embd = 512
@@ -247,11 +247,11 @@ class GlobalConfig:
             self.train_towns = os.listdir(self.root_dir)
             self.val_towns = self.train_towns
             self.train_data, self.val_data = [], []
-            print("Adding Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit) to validation data")
+            print("Adding Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit), Scenario_12, Scenario_13 to validation data")
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1)):  #We don't train on 05 and 02 to reserve them as test towns
+                    if ((town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1)):  
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Train Folder: ", file)
@@ -262,7 +262,7 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    if ((town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1)): # Only use Scenario 5, 6, 8, and 8 (lit) for validation
+                    if ((town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Val Folder: ", file)
