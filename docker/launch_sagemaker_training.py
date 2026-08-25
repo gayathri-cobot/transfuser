@@ -29,7 +29,7 @@ DEFAULT_ECR_REPO = "cobot-ai/transfuser-train"
 DEFAULT_ROLE_ARN = f"arn:aws:iam::{DEFAULT_ACCOUNT_ID}:role/transfuser-sagemaker-execution-role"
 DEFAULT_DATA_S3_URI = "s3://e2e-local-nav-processed-938145530947-us-west-2-an/"
 DEFAULT_OUTPUT_S3_URI = "s3://e2e-local-nav-model-weights/sagemaker/transfuser"
-DEFAULT_ENTRYPOINT = "/workspace/container/entrypoint_sagemaker_train.sh"
+DEFAULT_ENTRYPOINT = "/workspace/container/entrypoint_sagemaker_train_frozen.sh"
 DEFAULT_EXCLUDE_TOWNS = ["scenario_1/"]
 MANIFEST_KEY = "_manifests/train_manifest.json"
 
@@ -111,7 +111,7 @@ def parse_args():
 
     # train.py flags, passed straight through as container arguments.
     p.add_argument("--id", default="transfuser")
-    p.add_argument("--epochs", type=int, default=101)
+    p.add_argument("--epochs", type=int, default=41)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--batch-size", type=int, default=12, help="Per-GPU; effective batch size = this * num_gpus")
     p.add_argument("--setting", default="validate", choices=["all", "validate"])

@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_16 — five two-point drives past the cart on the EAST-WEST
+  stretch scenario_2 uses (y=95.5) in the EBC area of patrick_henry_whole.
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  TWO POINTS PER ROUTE: spawn, then one goal. No intermediate waypoints, so the
+  whole path between them is the planner's to choose — which is the point.
+  Anything the robot does around the cart is nav2's decision, not authored geometry.
+
+  THE LANE, AS MEASURED (scenario_2's description asks for this stretch to be
+  verified before use, so it was):
+
+    robot lane y=95.0..96.0 is CLEAR from x=34.0 to x=47.73
+    Wall_108 caps the east end at x = 47.73..47.95 (over y = 94.50..96.83)
+
+  That east cap is the one structural difference from scenario_14/15. A spawn at
+  x=47.0 would sit 0.21 m off Wall_108 — outside the 0.15 m inscribed radius but
+  deep inside inflation_radius=0.75, which risks nav2 refusing to plan from it.
+  So every eastern endpoint here is x=46.5 (0.71 m clear of Wall_108) and the
+  route variety comes from the WEST side, which is open to x=34.
+
+  REFERENCE EXTENTS
+
+    proxie                     1.03 m long -> 0.52 m from centre to either face
+                               0.65 m wide -> 0.325 m across the lane
+    cart at timeline t=0       x = 44.52..45.45   (where it sits when spawned)
+    cart parked (t >= 8 s)     x = 40.52..41.45   (4 m west)
+    cart y band (both)         y = 94.70..95.30   (cart spawned at y=95.0,
+                                                   0.5 m south of the lane)
+
+  Route 1 is the tight case:
+    east point   45.45 + 0.5 + 0.52 = 46.47  ->  x = 46.5
+    west point   40.52 - 0.5 - 0.52 = 39.50  ->  x = 39.5
+
+  THE FIVE ROUTES
+
+    id  dir  start ->  goal   len     approach to the cart it meets first
+     1   W    46.5 ->  39.5   7.0 m   0.53 m  (tight both ends, westbound)
+     2   E    39.5 ->  46.5   7.0 m   0.50 m  (exact reverse of route 1)
+     3   E    37.5 ->  46.5   9.0 m   2.50 m  (eastbound, moderate run-up)
+     4   E    35.5 ->  46.5  11.0 m   4.50 m  (eastbound, long run-up)
+     5   W    46.5 ->  37.5   9.0 m   0.53 m  (westbound, long run-out)
+
+  Routes 2/3/4 are the interesting set: identical direction and goal, with only
+  the clear approach distance to the parked cart changing (0.5 / 2.5 / 4.5 m).
+  That is the nav-relevant variable — how much lane the robot gets to build a
+  costmap and settle to speed before it has to decide. Westbound approach cannot
+  be varied the same way because Wall_108 caps the east end, so routes 1 and 5
+  both approach tight and differ only in run-out.
+
+  A westbound robot meets the cart's START position first (x=44.52..45.45); an
+  eastbound one meets its PARKED position first (x=40.52..41.45). Both are checked.
+
+  Spawn clearance is checked against the cart's t=0 pose, not its parked pose: a
+  run does Stop() -> Spawn -> Play(), and Stop() rewinds the timeline, so at the
+  moment the robot is spawned the cart is still at its start. All five spawns are
+  clear of BOTH cart positions; all five goals are clear of the parked cart.
+
+  leg_by_leg is false throughout — with one waypoint it makes no practical
+  difference, but it keeps each drive a single continuous NavigatePath.
+
+  THE CART IS OFFSET 0.5 m SOUTH OF THE LANE, SO BOTH SIDES ARE VIABLE
+
+  Routes drive y=95.5; the cart sits at y=95.0, band y = 94.70..95.30. Measured
+  room around it:
+
+    north of the cart   1.60 m at its start (Wall_93, y=96.90)
+                        1.75 m at its parked spot (Wall_53, y=97.05)
+    south of the cart   25.3 m of open floor (Wall_455/Wall_122 at y=69.4)
+
+  It still blocks the driven line — proxie is 0.65 m wide, so its lane spans
+  y = 95.175..95.825 and overlaps the cart by 0.125 m. But the offset means a
+  NORTH pass is now genuinely available: the robot needs its centre at y >= 95.625
+  to clear the cart, which puts its north face at 95.95 and leaves 0.95 m to
+  Wall_93. Before the offset (cart at y=95.5) the north gap left only 0.45 m of
+  slack and south was the only real option.
+
+  So expect either side, and a much smaller lateral deviation than scenario_14
+  needed. If you want to force a decisive swing again, put the cart back on the
+  lane centreline at y=95.5.
+
+  NOTE the greybox has NO south wall on this stretch. scenario_2 manufactures its
+  corridor by spawning CorridorSouth at y=94.0; this scenario does not, so the
+  robot has open floor south. If you add that wall the corridor becomes
+  y=94.25..96.90 = 2.65 m clear. With the cart at y=95.0 that splits into a
+  0.45 m south gap and a 1.60 m north gap, so north becomes the single viable
+  route — which is what the 0.5 m offset buys. (On the centreline at y=95.5 it
+  was 0.80 m south / 1.10 m north, i.e. neither side comfortable.)
+
+  WHAT THE ROBOT ACTUALLY MEETS: a PARKED cart, not a moving one. The cart's 8 s
+  trip starts at Play(), and Apollo bringup outlasts it, so by the time the robot
+  drives the cart has been sitting at x = 40.52..41.45 for a while. This is a
+  static-obstacle test until the cart's time samples get a START HOLD (see the
+  cart asset's header) or a proximity trigger.
+-->
+<routes scenario="scenario_16">
+
+  <route id="1" leg_by_leg="false"
+         description="Westbound, tight both ends: spawn 0.5 m east of the cart's start footprint and drive 7 m west to 0.5 m past its parked footprint at x=41. The minimum-clearance case - nav2 starts already on top of the obstacle with almost no run-up.">
+    <start x="46.5" y="95.5" z="0.0" yaw="180.0" />
+    <waypoint x="39.5" y="95.5" yaw="180.0" description="past_cart" />
+  </route>
+
+  <route id="2" leg_by_leg="false"
+         description="Eastbound, tight both ends: the exact reverse of route 1. Spawn 0.5 m west of the cart's parked footprint and drive 7 m east, finishing 0.5 m past where the cart started.">
+    <start x="40.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="46.5" y="95.5" yaw="0.0" description="past_cart" />
+  </route>
+
+  <route id="3" leg_by_leg="false"
+         description="Eastbound with a moderate run-up: same goal as route 2 but spawning 2 m further west, so the robot gets 2.5 m of clear lane before it reaches the parked cart.">
+    <start x="40.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="45.5" y="95.5" yaw="0.0" description="past_cart" />
+  </route>
+
+  <route id="4" leg_by_leg="false"
+         description="Eastbound with a long run-up: same goal again, spawning 4 m further west than route 2 for 4.5 m of clear approach. Together routes 2/3/4 vary only the approach distance (0.5 / 2.5 / 4.5 m), so they isolate how much lane nav2 needs to react.">
+    <start x="40.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="44.5" y="95.5" yaw="0.0" description="past_cart" />
+  </route>
+
+  <route id="5" leg_by_leg="false"
+         description="Westbound with a long run-out: same tight spawn as route 1 but continuing 2 m further west, giving space to observe how the robot recovers the lane after passing.">
+    <start x="40.5" y="95.5" z="0.0" yaw="0.0" />
+    <waypoint x="46.5" y="95.5" yaw="0.0" description="past_cart" />
+  </route>
+
+</routes>

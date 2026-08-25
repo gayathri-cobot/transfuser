@@ -50,6 +50,8 @@ def parse_args():
                          help='Path to a trained .pth file, or a directory containing one '
                               'plus args.txt (e.g. model_ckpt/models_2022/<backbone>). '
                               'Pass "" to use random-initialized weights instead.')
+    parser.add_argument('--eval_scenario', type=str, default='scenario_1', help="The scenario you would like to evaluate")
+    parser.add_argument('--eval_route', type=str, default='1', help="The scenario you would like to evaluate")
     return parser.parse_args()
 
 
@@ -140,7 +142,7 @@ def main():
         else:
             print(f"No args.txt next to {weights_path} - assuming current config/CLI args match it.")
 
-    config = GlobalConfig(root_dir=args.data_root, setting='eval', eval_scenario='scenario_8', eval_route='config_5_route2')
+    config = GlobalConfig(root_dir=args.data_root, setting='eval', eval_scenario=args.eval_scenario, eval_route=args.eval_route)
 
     checkpoint_backbone = train_args.get('backbone')
     if checkpoint_backbone and args.backbone and checkpoint_backbone != args.backbone:

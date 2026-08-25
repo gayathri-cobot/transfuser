@@ -44,11 +44,11 @@ DEFAULT_BAG_DATA = '/workspace/bag_data'
 #Topic details
 CAMERA_SIDES = ('left', 'front', 'right')
 CAMERA_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/color/image_view_throttled')
+    side: (f'/{side}_camera/color/image_view')
     for side in CAMERA_SIDES
 }
 DEPTH_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/aligned_depth_to_color/image_rect_raw_throttled')
+    side: (f'/{side}_camera/aligned_depth_to_color/image_rect_raw')
     for side in CAMERA_SIDES
 }
 LIDAR_TOPIC_CANDIDATES = ('/hesai/pandar_points_isaac', '/hesai/pandar_points')
