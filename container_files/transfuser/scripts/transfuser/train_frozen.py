@@ -223,13 +223,13 @@ def main():
     frozen_modules   = freeze_groups(model, trainable_groups)
 
     #setting weights of non trainable parts to 0
-    if ('trunk' not in trainable_groups):
-        for group in GROUP_LOSSES:
-            if group not in trainable_groups:
-                loss_name = GROUP_LOSSES.get(group, None)
-                if loss_name in config.detailed_losses:
-                        index = config.detailed_losses.index(loss_name)
-                        config.detailed_losses_weights[index] = 0.0
+    # if ('trunk' not in trainable_groups):
+    for group in GROUP_LOSSES:
+        if group not in trainable_groups:
+            loss_name = GROUP_LOSSES.get(group, None)
+            if loss_name in config.detailed_losses:
+                    index = config.detailed_losses.index(loss_name)
+                    config.detailed_losses_weights[index] = 0.0
 
     if (len(frozen_modules) > 0):
         print("Training only:", ', '.join(sorted(trainable_groups)), "- the rest of the network is frozen.")

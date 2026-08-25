@@ -30,7 +30,7 @@ class GlobalConfig:
     bev_resolution_height = 300 # Height resoultion the BEV loss is upsampled to. Double check if width and height are swapped if you want to make them non symmetric.
     use_target_point_image = False
     gru_concat_target_point = True
-    augment = True
+    augment = False
     inv_augment_prob = 0.1 # Probablity that data augmentation is applied is 1.0 - inv_augment_prob
     aug_max_rotation = 20 # degree
     debug = False # If true the model in and outputs will be visualized and saved into Os variable Save_Path
