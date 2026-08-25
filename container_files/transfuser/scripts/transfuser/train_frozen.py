@@ -388,6 +388,22 @@ class Engine(object):
             detailed_losses_weights = config.detailed_losses_weights
         self.detailed_weights = {key: detailed_losses_weights[idx] for idx, key in enumerate(self.detailed_losses)}
 
+        # The parameters of each head, so the gradient norms can be logged per head instead of only as
+        # one number for the whole network. DDP keeps the real model in .module, so the lookup has to
+        # happen on the unwrapped one. Only groups that still have trainable parameters are tracked,
+        # a frozen group has no gradients at all and would log a flat 0 for the whole run.
+        base_model = self.model.module if (self.parallel == True) else self.model
+        self.grad_norm_groups = {}
+        for group, module_names in TRAINABLE_GROUPS.items():
+            group_params = []
+            for module_name in module_names:
+                module = getattr(base_model, module_name, None)
+                if (module is None):
+                    continue
+                group_params += [p for p in module.parameters() if p.requires_grad]
+            if (len(group_params) > 0):
+                self.grad_norm_groups[group] = group_params
+
     def save_best_model(self, val_loss):
         if (val_loss < self.bestval):
             self.bestval = val_loss
@@ -454,8 +470,9 @@ class Engine(object):
 
         num_batches = 0
         loss_epoch = 0.0
-        norm_epoch = 0.0    
+        norm_epoch = 0.0
         detailed_losses_epoch  = {key: 0.0 for key in self.detailed_losses}
+        detailed_norms_epoch   = {group: 0.0 for group in self.grad_norm_groups}
         self.cur_epoch += 1
 
         # Train loop
@@ -472,11 +489,20 @@ class Engine(object):
             norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
             norm_epoch += float(norm.item())
 
+            # Per head gradient norms. max_norm=inf means clip_grad_norm_ only measures the norm and
+            # rescales nothing, which is how the whole network norm above is computed too. Grouping the
+            # parameters per head first is what makes this one number per head instead of one per tensor.
+            for group, group_params in self.grad_norm_groups.items():
+                group_norm = torch.nn.utils.clip_grad_norm_(group_params, max_norm=float('inf'))
+                detailed_norms_epoch[group] += float(group_norm.item())
+
             self.optimizer.step()
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        self.log_losses(loss_epoch, detailed_losses_epoch, num_batches, total_norm=norm_epoch)
+        # self.log_losses(loss_epoch, detailed_losses_epoch, num_batches, total_norm=norm_epoch)
+        self.log_losses(loss_epoch, detailed_losses_epoch, num_batches, total_norm=norm_epoch,
+                        detailed_norms=detailed_norms_epoch)
 
 
     @torch.inference_mode() # Faster version of torch_no_grad
@@ -512,12 +538,17 @@ class Engine(object):
 
         return val_loss, wp_loss
 
-    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False):
+    # def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False):
+    def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False,
+                   detailed_norms = None):
         # Average all the batches into one number
         loss_epoch = loss_epoch / num_batches
         total_norm = total_norm / num_batches if total_norm is not None else None
         for key, value in detailed_losses_epoch.items():
             detailed_losses_epoch[key] = value / num_batches
+        if (detailed_norms is not None):
+            for key, value in detailed_norms.items():
+                detailed_norms[key] = value / num_batches
 
         # In parallel training aggregate all values onto the master node.
 
@@ -541,6 +572,11 @@ class Engine(object):
             self.writer.add_scalar(prefix + 'loss_total', aggregated_total_loss, self.cur_epoch)
             if total_norm is not None:
                 self.writer.add_scalar(prefix + 'grad_norm', total_norm, self.cur_epoch)
+            # One curve per head, e.g. grad_norm_bev and grad_norm_seg. Like the total grad_norm above
+            # these are rank 0's own values, they are not gathered across ranks.
+            if detailed_norms is not None:
+                for group, value in detailed_norms.items():
+                    self.writer.add_scalar(prefix + 'grad_norm_' + group, value, self.cur_epoch)
             aggregated_detailed = {}
             for key in detailed_losses_epoch:
                 aggregated_detailed[key] = sum(gathered_detailed_losses[i][key]
