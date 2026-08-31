@@ -27,9 +27,10 @@ DEFAULT_REGION = "us-west-2"
 DEFAULT_ACCOUNT_ID = "938145530947"
 DEFAULT_ECR_REPO = "cobot-ai/transfuser-train"
 DEFAULT_ROLE_ARN = f"arn:aws:iam::{DEFAULT_ACCOUNT_ID}:role/transfuser-sagemaker-execution-role"
-DEFAULT_DATA_S3_URI = "s3://e2e-local-nav-processed-938145530947-us-west-2-an/"
+# DEFAULT_DATA_S3_URI = "s3://e2e-local-nav-processed-938145530947-us-west-2-an/"
+DEFAULT_DATA_S3_URI = "s3://e2e-local-nav-processed-distance/"
 DEFAULT_OUTPUT_S3_URI = "s3://e2e-local-nav-model-weights/sagemaker/transfuser"
-DEFAULT_ENTRYPOINT = "/workspace/container/entrypoint_sagemaker_train_frozen.sh"
+DEFAULT_ENTRYPOINT = "/workspace/container/entrypoint_sagemaker_train.sh"
 DEFAULT_EXCLUDE_TOWNS = ["scenario_1/"]
 MANIFEST_KEY = "_manifests/train_manifest.json"
 
@@ -111,13 +112,15 @@ def parse_args():
 
     # train.py flags, passed straight through as container arguments.
     p.add_argument("--id", default="transfuser")
-    p.add_argument("--epochs", type=int, default=41)
+    p.add_argument("--epochs", type=int, default=71)
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--batch-size", type=int, default=12, help="Per-GPU; effective batch size = this * num_gpus")
     p.add_argument("--setting", default="validate", choices=["all", "validate"])
     p.add_argument("--backbone", default="transFuser", choices=["transFuser", "late_fusion", "latentTF", "geometric_fusion"])
     p.add_argument("--val-every", type=int, default=5)
     p.add_argument("--save-freq", type=int, default=20)
+    p.add_argument('--image_architecture', type=str, default='resnet34', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
+    p.add_argument('--lidar_architecture', type=str, default='resnet34', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
     p.add_argument("--logdir", default="log", help="train.py --logdir; checkpoints land under model_ckpt/<logdir>/<id>/")
     p.add_argument("--extra-args", nargs=argparse.REMAINDER, default=[], help="Any additional train.py flags, passed through verbatim")
     return p.parse_args()
@@ -136,6 +139,8 @@ def build_container_arguments(args):
         "--val_every", str(args.val_every),
         "--save_freq", str(args.save_freq),
         "--logdir", args.logdir,
+        "--image_architecture", args.image_architecture,
+        "--lidar_architecture", args.lidar_architecture,
     ]
     container_args.extend(args.extra_args)
     return container_args

@@ -153,7 +153,7 @@ class GlobalConfig:
 
     # removing losses that are not used
     detailed_losses = ['loss_wp', 'loss_bev', 'loss_depth', 'loss_semantic',]
-    detailed_losses_weights = [1.0, 1.0, 1.0, 1.0,]
+    detailed_losses_weights = [1.0, 0.7, 1.0, 0.7,]
     
 
     perception_output_features = 512 # Number of features outputted by the perception branch.
@@ -247,11 +247,11 @@ class GlobalConfig:
             self.train_towns = os.listdir(self.root_dir)
             self.val_towns = self.train_towns
             self.train_data, self.val_data = [], []
-            print("Adding Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit), Scenario_12, Scenario_13 to validation data")
+            print("Adding Scenario_3, Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit), Scenario_12, Scenario_13, Scenario_15 to validation data")
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1)):  
+                    if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Train Folder: ", file)
@@ -262,7 +262,7 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    if ((town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
+                    if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         print("Val Folder: ", file)

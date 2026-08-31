@@ -279,7 +279,7 @@ class Engine(object):
 
         self.detailed_losses         = config.detailed_losses
         if self.args.wp_only:
-            detailed_losses_weights = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            detailed_losses_weights = [1.0, 0.0, 0.0, 0.0,]
         else:
             detailed_losses_weights = config.detailed_losses_weights
         self.detailed_weights = {key: detailed_losses_weights[idx] for idx, key in enumerate(self.detailed_losses)}

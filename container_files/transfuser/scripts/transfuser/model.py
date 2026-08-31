@@ -937,7 +937,7 @@ class LidarCenterNet(nn.Module):
         pred_bev = self.pred_bev(features[0])
         pred_bev = F.interpolate(pred_bev, (self.config.bev_resolution_height, self.config.bev_resolution_width), mode='bilinear', align_corners=True)
 
-        weight = torch.from_numpy(np.array([1., 1.5])).to(dtype=torch.float32, device=pred_bev.device)
+        weight = torch.from_numpy(np.array([1., 4.0])).to(dtype=torch.float32, device=pred_bev.device)
 
         
         loss_bev = F.cross_entropy(pred_bev, bev, weight=weight).mean()
