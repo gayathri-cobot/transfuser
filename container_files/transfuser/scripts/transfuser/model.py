@@ -812,7 +812,7 @@ class LidarCenterNet(nn.Module):
         pred_wp = torch.stack(output_wp, dim=1)
 
         # pred the wapoints in the vehicle coordinate and we convert it to lidar coordinate here because the GT waypoints is in lidar coordinate
-        pred_wp[:, :, 0] = pred_wp[:, :, 0] - self.config.lidar_pos[0]
+        # pred_wp[:, :, 0] = pred_wp[:, :, 0] - self.config.lidar_pos[0]
             
         pred_brake = None
         steer = None
