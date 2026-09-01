@@ -153,7 +153,7 @@ class GlobalConfig:
 
     # removing losses that are not used
     detailed_losses = ['loss_wp', 'loss_bev', 'loss_depth', 'loss_semantic',]
-    detailed_losses_weights = [1.0, 0.7, 1.0, 0.7,]
+    detailed_losses_weights = [1.0, 0.5, 1.0, 1.0,]
     
 
     perception_output_features = 512 # Number of features outputted by the perception branch.
