@@ -42,15 +42,10 @@ import torch
 DEFAULT_BAG_DATA = '/workspace/bag_data'
 
 #Topic details
-CAMERA_SIDES = ('left', 'front', 'right')
-CAMERA_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/color/image_view')
-    for side in CAMERA_SIDES
-}
-DEPTH_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/aligned_depth_to_color/image_rect_raw')
-    for side in CAMERA_SIDES
-}
+CAMERA_TOPIC_CANDIDATES = ('/front_camera/color/image_view','/front_camera/color/image_view_throttled')
+
+DEPTH_TOPIC_CANDIDATES = ('/front_camera/aligned_depth_to_color/image_rect_raw', '/front_camera/aligned_depth_to_color/image_rect_raw_throttled',)
+
 LIDAR_TOPIC_CANDIDATES = ('/hesai/pandar_points_isaac', '/hesai/pandar_points')
 COSTMAP_TOPIC = '/local_costmap'
 CMD_VEL_TOPIC = '/cmd_vel/isaac'
@@ -209,20 +204,23 @@ def closest_command_point(waypoints, x, y, yaw):
     return min(pool, key=lambda wp: (wp['x'] - x) ** 2 + (wp['y'] - y) ** 2)
 
 def save_synced_frames(bag_path, type_map, counts, output_path,
-                        ref_side='front', max_dt_ns=1e7):
-    """Single pass over the bag. Front camera RGB is the reference tick;
-    depth (per side), lidar, tf (costmap+trajectory) are only written
-    when a sample within max_dt_ns of the reference timestamp exists.
-    Nothing is written for reference frames without full coverage.
+                        ref_side='front', max_dt_ns=1e7, min_dist_m=0.5):
+    """Single pass over the bag. Each /tf tick is a candidate reference tick,
+    accepted only once the robot has moved at least min_dist_m (map frame,
+    base_link) since the last saved tick. Camera RGB, depth, lidar, costmap
+    and cmd_vel are only written when a sample within max_dt_ns of the
+    reference timestamp exists. Nothing is written for reference frames
+    without full coverage.
     """
-    for side in CAMERA_SIDES:
-        os.makedirs(os.path.join(output_path, 'rgb', side), exist_ok=True)
-        os.makedirs(os.path.join(output_path, 'depth', side), exist_ok=True)
+
+    os.makedirs(os.path.join(output_path, 'rgb'), exist_ok=True)
+    os.makedirs(os.path.join(output_path, 'depth'), exist_ok=True)
     os.makedirs(os.path.join(output_path, 'lidar'), exist_ok=True)
     os.makedirs(os.path.join(output_path, 'costmap'), exist_ok=True)
     os.makedirs(os.path.join(output_path, 'trajectory'), exist_ok=True)
 
-    ref_topic = CAMERA_TOPIC_CANDIDATES[ref_side]
+    # ref_topic = CAMERA_TOPIC_CANDIDATES[0]
+    ref_topic = TF_TOPIC
 
     val = _bag_topic_counts(bag_path).get(ref_topic, None)
 
@@ -237,17 +235,29 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
     #calculate the average frequency of the reference topic
     avg_freq = average_topic_hz(bag_path).get(ref_topic, 0)
     print(f"[info] average frequency of {ref_topic}: {avg_freq:.2f} Hz")
-    other_side = ('left', 'right')
 
-    depth_topics = list(DEPTH_TOPIC_CANDIDATES.values())
-    other_camera_topics = [
-        v for k, v in CAMERA_TOPIC_CANDIDATES.items() if k != ref_side
-    ]
+    depth_topics = next((t for t in DEPTH_TOPIC_CANDIDATES if t in type_map), None)
+    camera_topic = next((t for t in CAMERA_TOPIC_CANDIDATES if t in type_map), None)
+
+    print(depth_topics, camera_topic)
+
     lidar_topic = next((t for t in LIDAR_TOPIC_CANDIDATES if t in type_map), None)
 
+    """
+    {'/hesai/pandar_points_isaac': 'sensor_msgs/msg/PointCloud2',
+    '/cmd_vel/isaac': 'geometry_msgs/msg/Twist',
+    '/front_camera/color/image_view': 'sensor_msgs/msg/Image',
+    '/front_camera/aligned_depth_to_color/image_rect_raw': 'sensor_msgs/msg/Image',
+    '/tf_static': 'tf2_msgs/msg/TFMessage',
+    '/tf': 'tf2_msgs/msg/TFMessage',
+    '/local_costmap': 'nav_msgs/msg/OccupancyGrid'}
+
+    """
+
     topics = (
-        [ref_topic, TF_STATIC_TOPIC, TF_TOPIC, COSTMAP_TOPIC, CMD_VEL_TOPIC]
-        + depth_topics + other_camera_topics
+        [ref_topic, TF_STATIC_TOPIC, COSTMAP_TOPIC, CMD_VEL_TOPIC]
+        + ([depth_topics] if depth_topics else [])
+        + ([camera_topic] if camera_topic else [])
         + ([lidar_topic] if lidar_topic else [])
     )
 
@@ -261,60 +271,69 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
     
     print(command_pts)
 
-    SAMPLE_PERIOD_NS = int(0.5 * 1e9)   # 2 Hz
-    next_t = None
+    # SAMPLE_PERIOD_NS = int(0.5 * 1e9)   # 2 Hz
+    # next_t = None
     
+
+    last_saved_xy = None
 
     for t, msg, msg_type_name, topic_name in _iter_messages_multi(bag_path, topics):
         if topic_name == TF_STATIC_TOPIC:
             for tf_msg in msg.transforms:
                 tf_buffer.set_transform_static(tf_msg, 'bag')
             continue
-        if topic_name == TF_TOPIC:
-            for tf_msg in msg.transforms:
-                tf_buffer.set_transform(tf_msg, 'bag')
-            continue
 
         if topic_name != ref_topic:
             latest[topic_name] = (t, msg, msg_type_name)
             continue
 
-        ref_seen += 1
-
-        if next_t is not None and t<next_t:
-            continue
-        
-        # get reference values for the topics
-        def closest_val(topic):
-            entry = latest.get(topic)
-            if entry is None or abs(entry[0] - t) > max_dt_ns:
-                return None
-            return entry
-
-        depth_entry = closest_val(DEPTH_TOPIC_CANDIDATES[ref_side])
-        lidar_entry = closest_val(lidar_topic) if lidar_topic else True  # optional
-        costmap_entry = latest.get(COSTMAP_TOPIC)
-        cmd_vel_entry = closest_val(CMD_VEL_TOPIC)
-
-
-        if depth_entry is None or lidar_entry is None or cmd_vel_entry is None:
-            n_skipped += 1
-            continue  # incomplete -> write nothing for this tick
+        # topic_name == ref_topic == TF_TOPIC: update the buffer, then gate on
+        # distance traveled since the last saved tick before treating this as
+        # a reference tick.
+        for tf_msg in msg.transforms:
+            tf_buffer.set_transform(tf_msg, 'bag')
 
         try:
             transform = tf_buffer.lookup_transform('map', 'base_link', Time())
-            # grid_to_map = tf_buffer.lookup_transform('map', costmap_entry[1].header.frame_id, Time())
-        except tf2_ros.TransformException as exc:
-            print(f"[warn] synced frame at t={t} skipped (tf: {exc})")
-            n_skipped += 1
-            continue
+        except tf2_ros.TransformException:
+            continue  # no pose yet -> can't evaluate distance, not a candidate tick
 
-        next_t = t + SAMPLE_PERIOD_NS if next_t is None else next_t + SAMPLE_PERIOD_NS
-        while next_t <= t:
-            next_t += SAMPLE_PERIOD_NS
+        robot_x = transform.transform.translation.x
+        robot_y = transform.transform.translation.y
+
+        if last_saved_xy is not None:
+            dist = math.hypot(robot_x - last_saved_xy[0], robot_y - last_saved_xy[1])
+            if dist < min_dist_m:
+                continue  # hasn't moved far enough since the last saved tick
+
+        ref_seen += 1
+
+        # get reference values for the topics
+        def closest_val(topic, max_dt):
+            entry = latest.get(topic)
+            if entry is None or abs(entry[0] - t) > max_dt:
+                return None
+            return entry
+
+        camera_entry = closest_val(camera_topic, max_dt_ns)
+        depth_entry = closest_val(depth_topics, max_dt_ns)
+        lidar_entry = closest_val(lidar_topic, max_dt_ns) if lidar_topic else True  # optional
+        # No freshness window: reuse whatever costmap has most recently arrived,
+        # however stale, so long as one has been seen at all.
+        costmap_entry = latest.get(COSTMAP_TOPIC)
+        cmd_vel_entry = closest_val(CMD_VEL_TOPIC, max_dt_ns)
+
+
+        if (camera_entry is None or depth_entry is None or lidar_entry is None
+                or cmd_vel_entry is None):
+            n_skipped += 1
+            continue  # incomplete -> write nothing for this tick
+
         # only now do we touch disk
-        rgb_bgr = _msg_to_bgr(msg, msg_type_name)
+        c_t, c_msg, c_type = camera_entry
+        rgb_bgr = _msg_to_bgr(c_msg, c_type)
         cv2.imwrite(os.path.join(output_path, 'rgb', ref_side, f'{t}.png'), rgb_bgr)
+        print(f"[info] saved rgb frame at t={t} to {os.path.join(output_path, 'rgb', ref_side, f'{t}.png')}")
 
         d_t, d_msg, d_type = depth_entry
         depth_png = _depth_array_to_png_uint16(_raw_depth_to_array(d_msg))
@@ -326,28 +345,15 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
             points = point_cloud2.read_points(l_msg, field_names=("x", "y", "z"), skip_nans=True)
             np.save(os.path.join(output_path, 'lidar', f'{t}.npy'), np.array(list(points)))
 
-        cm_t, cm_msg, cm_type = costmap_entry
-        rgb_grid, _ = _grid_to_rgb(cm_msg)
-
-        robot_in_grid = tf_buffer.lookup_transform(costmap_entry[1].header.frame_id, 'base_link', Time())
-        robot_x = robot_in_grid.transform.translation.x
-        robot_y = robot_in_grid.transform.translation.y
-        robot_yaw = _yaw_from_quat(robot_in_grid.transform.rotation)
-
-        cx, cy = world_to_pixel(robot_x, robot_y, cm_msg)
-        fx, fy = world_to_pixel(robot_x + 0.5*np.cos(robot_yaw),
-                                robot_y + 0.5*np.sin(robot_yaw), cm_msg)
-
-        rgb_grid = (np.clip(rgb_grid, 0, 1) * 255).astype(np.uint8)
-
-
-        cv2.imwrite(os.path.join(output_path, 'costmap', f'{t}.png'), rgb_grid)
+        if costmap_entry is not None:
+            cm_t, cm_msg, cm_type = costmap_entry
+            rgb_grid, _ = _grid_to_rgb(cm_msg)
+            rgb_grid = (np.clip(rgb_grid, 0, 1) * 255).astype(np.uint8)
+            cv2.imwrite(os.path.join(output_path, 'costmap', f'{t}.png'), rgb_grid)
         cv_t, cv_msg, cv_type = cmd_vel_entry
         cv_linear, cv_angular = _twist_components(cv_msg, cv_type)
 
         #find the closest command point
-        robot_x = transform.transform.translation.x
-        robot_y = transform.transform.translation.y
         robot_z = transform.transform.translation.z
         robot_yaw = _yaw_from_quat(transform.transform.rotation)
 
@@ -368,13 +374,12 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
                 'y_command': cmd_pt['y'],
             }, f)
 
-            
-
+        last_saved_xy = (robot_x, robot_y)
         n_saved += 1
 
-    
+
     print(f"[info] saved {n_saved} synced frames, skipped {n_skipped} incomplete ticks "
-          f"(max_dt={max_dt_ns / 1e9:.1f}s)")
+          f"(max_dt={max_dt_ns / 1e9:.1f}s, min_dist={min_dist_m:.2f}m)")
 
 
 def find_command_point(bag_path):
@@ -676,13 +681,13 @@ def save_segmented_images(bag_path, type_map, counts, output_path):
 
 
 
-def process_data(bag_path, output_path, base_frame, map_frame, max_sync_dt_s=10.0):
+def process_data(bag_path, output_path, base_frame, map_frame, max_sync_dt_s=10.0, min_dist_m=0.05):
     bag_path = os.path.abspath(bag_path.rstrip('/'))
     run_name = os.path.basename(bag_path)
     counts = _bag_topic_counts(bag_path)
     type_map = _type_map(_open_reader(bag_path))
     save_synced_frames(bag_path, type_map, counts, output_path,
-                        max_dt_ns=int(max_sync_dt_s * 1e9))
+                        max_dt_ns=int(max_sync_dt_s * 1e9), min_dist_m=min_dist_m)
     # save_camera_data(bag_path, type_map, counts, output_path)
     # save_lidar_data(bag_path, type_map, counts, output_path)
     # save_cost_map_bev(bag_path, type_map, counts, output_path)
@@ -702,7 +707,7 @@ def main():
                          help="Robot base frame for the trajectory (default: %(default)s).")
     parser.add_argument('--map-frame', default='map',
                          help="Fixed frame the trajectory is expressed in (default: %(default)s).")
-    parser.add_argument('--max-sync-dt', type=float, default=0.5,
+    parser.add_argument('--max-sync-dt', type=float, default=0.1,
                          help="Max allowed time gap, in seconds, between the reference "
                               "front-camera tick and every other synced stream "
                               "(depth/lidar/costmap/left+right camera). The throttled "
@@ -710,12 +715,17 @@ def main():
                               "so a sub-second window rarely finds a full match; widen "
                               "this (and rerun) if you still see 0 synced frames, or "
                               "tighten it if the matches look too stale (default: %(default)s).")
+    parser.add_argument('--min-dist', type=float, default=0.05,
+                         help="Minimum distance, in meters, the robot must travel "
+                              "(map frame, base_link) between saved reference ticks "
+                              "(default: %(default)s).")
     args = parser.parse_args()
 
     output_path = args.output or _default_output_path(args.bag)
     print(output_path)
     os.makedirs(output_path, exist_ok=True)
-    process_data(args.bag, output_path, args.base_frame, args.map_frame, args.max_sync_dt)
+    process_data(args.bag, output_path, args.base_frame, args.map_frame,
+                 args.max_sync_dt, args.min_dist)
 
 if __name__ == '__main__':
     main()
