@@ -380,7 +380,7 @@ class Engine(object):
         loss_epoch = 0.0
         detailed_val_losses_epoch  = {key: 0.0 for key in self.detailed_losses}
 
-        # Evaluation loop loop
+        # Evaluation loop
         for data in tqdm(self.dataloader_val):
             losses = self.load_data_compute_loss(data)
 
@@ -442,6 +442,8 @@ class Engine(object):
 
             wp_loss = aggregated_detailed['loss_wp']
             if validate:
+                for key, value in detailed_losses_epoch.items():
+                    print(f"Validation loss {key}: {value:.4f}")
                 self.save_best_model(wp_loss)
 
             return aggregated_total_loss, wp_loss

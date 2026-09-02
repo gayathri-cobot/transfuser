@@ -4,7 +4,6 @@ class GlobalConfig:
     """ base architecture configurations """
 	# Data
     seq_len = 1 # input timesteps
-    # use different seq len for image and lidar
     img_seq_len = 1 
     lidar_seq_len = 1
     pred_len = 4 # future waypoints predicted
@@ -37,8 +36,6 @@ class GlobalConfig:
     sync_batch_norm = False # If this is true we convert the batch norms, to synced bach norms.
     train_debug_save_freq = 50 # At which interval to save debug files to disk during training
 
-    bb_confidence_threshold = 0.3 # Confidence of a bounding box that is needed for the detection to be accepted
-
     # Lidar discretization, configuration only used for Point Pillars
     use_point_pillars = False
     max_lidar_points = 40000
@@ -68,10 +65,6 @@ class GlobalConfig:
     gru_hidden_size = 64
 
 
-    """
-    Commenting since it is not needed
-    """
-
     num_class = 2
     classes = {
         0: [0, 0, 0], #occupied
@@ -82,55 +75,6 @@ class GlobalConfig:
             [255, 255, 255], #unoccupied
     ]
     converter = [0] * 255 + [1]  # raw pixel value 0 -> occupied, 255 -> unoccupied
-    # classes = {
-    #     0: [0, 0, 0],  # unlabeled
-    #     1: [0, 0, 255],  # vehicle
-    #     2: [128, 64, 128],  # road
-    #     3: [255, 0, 0],  # red light
-    #     4: [0, 255, 0],  # pedestrian
-    #     5: [157, 234, 50],  # road line
-    #     6: [255, 255, 255],  # sidewalk
-    # }
-    #Color format BGR
-    # classes_list = [
-    #     [0, 0, 0],  # unlabeled
-    #     [255, 0, 0],  # vehicle
-    #     [128, 64, 128],  # road
-    #     [0, 0, 255],  # red light
-    #     [0, 255, 0],  # pedestrian
-    #     [50, 234, 157],  # road line
-    #     [255, 255, 255],  # sidewalk
-    # ]
-    # converter = [
-    #     0,  # unlabeled
-    #     0,  # building
-    #     0,  # fence
-    #     0,  # other
-    #     4,  # pedestrian
-    #     0,  # pole
-    #     5,  # road line
-    #     2,  # road
-    #     6,  # sidewalk
-    #     0,  # vegetation
-    #     1,  # vehicle
-    #     0,  # wall
-    #     0,  # traffic sign
-    #     0,  # sky
-    #     0,  # ground
-    #     0,  # bridge
-    #     0,  # rail track
-    #     0,  # guard rail
-    #     0,  # traffic light
-    #     0,  # static
-    #     0,  # dynamic
-    #     0,  # water
-    #     0,  # terrain
-    #     3,  # red light
-    #     3,  # yellow light
-    #     0,  # green light
-    #     0,  # stop sign
-    #     5,  # stop line marking
-    # ]
 
     # Optimization
     lr = 1e-4 # learning rate
@@ -147,13 +91,8 @@ class GlobalConfig:
     img_anchors = img_vert_anchors * img_horz_anchors
     lidar_anchors = lidar_vert_anchors * lidar_horz_anchors
 
-    # detailed_losses = ['loss_wp', 'loss_bev', 'loss_depth', 'loss_semantic', 'loss_center_heatmap', 'loss_wh',
-    #                    'loss_offset', 'loss_yaw_class', 'loss_yaw_res', 'loss_velocity', 'loss_brake']
-    # detailed_losses_weights = [1.0, 1.0, 1.0, 1.0, 0.2, 0.2, 0.2, 0.2, 0.2, 0.0, 0.0]
-
-    # removing losses that are not used
     detailed_losses = ['loss_wp', 'loss_bev', 'loss_depth', 'loss_semantic',]
-    detailed_losses_weights = [1.0, 0.5, 1.0, 1.0,]
+    detailed_losses_weights = [1.0, 1.0, 1.0, 1.0,]
     
 
     perception_output_features = 512 # Number of features outputted by the perception branch.
@@ -166,31 +105,6 @@ class GlobalConfig:
 
     deconv_scale_factor_1 = 8 # Scale factor, of how much the grid size will be interpolated after the first layer
     deconv_scale_factor_2 = 4 # Scale factor, of how much the grid size will be interpolated after the second layer
-
-    # gps_buffer_max_len = 100 # Number of past gps measurements that we track.
-    # carla_frame_rate = 1.0 / 20.0 # CARLA frame rate in milliseconds
-    # carla_fps = 20 # Simulator Frames per second
-    # iou_treshold_nms = 0.2  # Iou threshold used for Non Maximum suppression on the Bounding Box predictions for the ensembles
-    # steer_damping = 0.5 # Damping factor by which the steering will be multiplied when braking
-    # route_planner_min_distance = 7.5
-    # route_planner_max_distance = 50.0
-    # action_repeat = 2 # Number of times we repeat the networks action. It's 2 because the LiDAR operates at half the frame rate of the simulation
-    # stuck_threshold = 1100/action_repeat # Number of frames after which the creep controller starts triggering. Divided by
-    # creep_duration = 30 / action_repeat # Number of frames we will creep forward
-
-    # Size of the safety box
-    # safety_box_z_min = -2.0
-    # safety_box_z_max = -1.05
-
-    # safety_box_y_min = -3.0
-    # safety_box_y_max = 0.0
-
-    # safety_box_x_min = -1.066
-    # safety_box_x_max = 1.066
-
-    # ego_extent_x = 2.4508416652679443 # Half the length of the ego car in x direction
-    # ego_extent_y = 1.0641621351242065 # Half the length of the ego car in x direction
-    # ego_extent_z = 0.7553732395172119 # Half the length of the ego car in x direction
 
 	# GPT Encoder
     n_embd = 512
@@ -251,10 +165,10 @@ class GlobalConfig:
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
+                    # if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
+                    if ((town.find('scenario_1_gray') != -1)):
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
-                        print("Train Folder: ", file)
                         self.train_data.append(os.path.join(self.root_dir, town, file))
                 # for file in root_files:
                 #     if not os.path.isfile(os.path.join(self.root_dir, file)):
@@ -262,10 +176,10 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
+                    # if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
+                    if ((town.find('scenario_1_gray') == -1)):
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
-                        print("Val Folder: ", file)
                         self.val_data.append(os.path.join(self.root_dir, town, file))
         elif (setting == 'eval'): #No training data needed during evaluation.
             self.eval_towns = os.listdir(self.root_dir)

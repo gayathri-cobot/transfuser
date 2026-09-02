@@ -119,9 +119,10 @@ def parse_args():
     p.add_argument("--backbone", default="transFuser", choices=["transFuser", "late_fusion", "latentTF", "geometric_fusion"])
     p.add_argument("--val-every", type=int, default=5)
     p.add_argument("--save-freq", type=int, default=20)
-    p.add_argument('--image_architecture', type=str, default='regnety_032', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
-    p.add_argument('--lidar_architecture', type=str, default='regnety_032', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
+    p.add_argument('--image_architecture', type=str, default='resnet34', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
+    p.add_argument('--lidar_architecture', type=str, default='resnet34', choices=['efficientnet_b0', 'resnet34', 'regnety_032'])
     p.add_argument("--logdir", default="log", help="train.py --logdir; checkpoints land under model_ckpt/<logdir>/<id>/")
+    p.add_argument("--wp_only", type=int, default=0, help="0: Use all losses, 1: Use only the wp loss")
     p.add_argument("--extra-args", nargs=argparse.REMAINDER, default=[], help="Any additional train.py flags, passed through verbatim")
     return p.parse_args()
 
@@ -141,6 +142,7 @@ def build_container_arguments(args):
         "--logdir", args.logdir,
         "--image_architecture", args.image_architecture,
         "--lidar_architecture", args.lidar_architecture,
+        "--wp_only", str(args.wp_only),
     ]
     container_args.extend(args.extra_args)
     return container_args

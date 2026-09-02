@@ -180,9 +180,8 @@ class IsaacSimData(Dataset):
                     print("Error loading file: ", str(images[i], encoding='utf-8'))
                 images_i = scale_image_cv2(cv2.cvtColor(images_i, cv2.COLOR_BGR2RGB), self.scale)
 
-                # costmap is already a plain black/white occupancy image (no CARLA-style
-                # bit-packed multi-class encoding), so just threshold it into a single
-                # binary occupancy channel: 1 = occupied, 0 = free.
+                # costmap is already a plain black/white occupancy image. so just threshold it into a single
+                # binary occupancy channel: 1 = free, 0 = occupied.
                 bev_array = cv2.imread(str(bevs[i], encoding='utf-8'), cv2.IMREAD_GRAYSCALE)
                 if (bev_array is None):
                     print("Error loading file: ", str(bevs[i], encoding='utf-8'))

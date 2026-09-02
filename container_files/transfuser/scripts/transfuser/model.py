@@ -23,668 +23,668 @@ import torch.nn as nn
 import numpy as np
 from torchvision.ops import batched_nms
 
-# LidarCenterNetHead below is a CenterNet-style detection head originally built on
-# mmcv/mmdet (mmcv-full==1.6.0 + mmdet==2.25.0 per README.md, pinned to torch 1.12/cu113).
-# There's no mmcv-full 1.x wheel for newer CUDA/torch, and the mmcv 2.x/mmdet 3.x rewrite
-# removed this exact API (mmcv.runner, force_fp32, etc.), so the small set of CenterNet
-# utilities actually used here are reimplemented directly in plain PyTorch instead.
-
+# # LidarCenterNetHead below is a CenterNet-style detection head originally built on
+# # mmcv/mmdet (mmcv-full==1.6.0 + mmdet==2.25.0 per README.md, pinned to torch 1.12/cu113).
+# # There's no mmcv-full 1.x wheel for newer CUDA/torch, and the mmcv 2.x/mmdet 3.x rewrite
+# # removed this exact API (mmcv.runner, force_fp32, etc.), so the small set of CenterNet
+# # utilities actually used here are reimplemented directly in plain PyTorch instead.
+
 
-def multi_apply(func, *args, **kwargs):
-    """Apply func across each entry of args, transposing per-return-value (mmdet's multi_apply)."""
-    pfunc = partial(func, **kwargs) if kwargs else func
-    map_results = map(pfunc, *args)
-    return tuple(map(list, zip(*map_results)))
+# def multi_apply(func, *args, **kwargs):
+#     """Apply func across each entry of args, transposing per-return-value (mmdet's multi_apply)."""
+#     pfunc = partial(func, **kwargs) if kwargs else func
+#     map_results = map(pfunc, *args)
+#     return tuple(map(list, zip(*map_results)))
 
-
-def force_fp32(apply_to=None):
-    """No-op: this project never enables mixed precision (config.fp16_enabled is always False)."""
-    def decorator(func):
-        return func
-    return decorator
+
+# def force_fp32(apply_to=None):
+#     """No-op: this project never enables mixed precision (config.fp16_enabled is always False)."""
+#     def decorator(func):
+#         return func
+#     return decorator
 
 
-def bias_init_with_prob(prior_prob):
-    """Bias so sigmoid(bias) == prior_prob at init (standard CenterNet/focal-loss heatmap init)."""
-    return float(-np.log((1 - prior_prob) / prior_prob))
+# def bias_init_with_prob(prior_prob):
+#     """Bias so sigmoid(bias) == prior_prob at init (standard CenterNet/focal-loss heatmap init)."""
+#     return float(-np.log((1 - prior_prob) / prior_prob))
 
 
-def normal_init(module, mean=0.0, std=1.0, bias=0.0):
-    nn.init.normal_(module.weight, mean, std)
-    if getattr(module, 'bias', None) is not None:
-        nn.init.constant_(module.bias, bias)
+# def normal_init(module, mean=0.0, std=1.0, bias=0.0):
+#     nn.init.normal_(module.weight, mean, std)
+#     if getattr(module, 'bias', None) is not None:
+#         nn.init.constant_(module.bias, bias)
 
 
-def get_local_maximum(heat, kernel=3):
-    """Heatmap NMS: zero out anything that isn't the local max within a kernel x kernel window."""
-    pad = (kernel - 1) // 2
-    hmax = F.max_pool2d(heat, kernel, stride=1, padding=pad)
-    keep = (hmax == heat).float()
-    return heat * keep
+# def get_local_maximum(heat, kernel=3):
+#     """Heatmap NMS: zero out anything that isn't the local max within a kernel x kernel window."""
+#     pad = (kernel - 1) // 2
+#     hmax = F.max_pool2d(heat, kernel, stride=1, padding=pad)
+#     keep = (hmax == heat).float()
+#     return heat * keep
 
 
-def get_topk_from_heatmap(scores, k=20):
-    batch, _, height, width = scores.size()
-    topk_scores, topk_inds = torch.topk(scores.view(batch, -1), k)
-    topk_clses = torch.div(topk_inds, height * width, rounding_mode='floor')
-    topk_inds = topk_inds % (height * width)
-    topk_ys = torch.div(topk_inds, width, rounding_mode='floor').float()
-    topk_xs = (topk_inds % width).float()
-    return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
+# def get_topk_from_heatmap(scores, k=20):
+#     batch, _, height, width = scores.size()
+#     topk_scores, topk_inds = torch.topk(scores.view(batch, -1), k)
+#     topk_clses = torch.div(topk_inds, height * width, rounding_mode='floor')
+#     topk_inds = topk_inds % (height * width)
+#     topk_ys = torch.div(topk_inds, width, rounding_mode='floor').float()
+#     topk_xs = (topk_inds % width).float()
+#     return topk_scores, topk_inds, topk_clses, topk_ys, topk_xs
 
 
-def transpose_and_gather_feat(feat, ind):
-    """Gather the feature vector at each of ind's flat spatial positions, per batch."""
-    feat = feat.permute(0, 2, 3, 1).contiguous()
-    feat = feat.view(feat.size(0), -1, feat.size(3))
-    ind = ind.unsqueeze(2).expand(-1, -1, feat.size(2)).long()
-    return feat.gather(1, ind)
+# def transpose_and_gather_feat(feat, ind):
+#     """Gather the feature vector at each of ind's flat spatial positions, per batch."""
+#     feat = feat.permute(0, 2, 3, 1).contiguous()
+#     feat = feat.view(feat.size(0), -1, feat.size(3))
+#     ind = ind.unsqueeze(2).expand(-1, -1, feat.size(2)).long()
+#     return feat.gather(1, ind)
 
 
-def gaussian_radius(det_size, min_overlap=0.7):
-    """CornerNet/CenterNet closed-form radius for a gaussian blob to overlap det_size by min_overlap IoU."""
-    height, width = det_size
+# def gaussian_radius(det_size, min_overlap=0.7):
+#     """CornerNet/CenterNet closed-form radius for a gaussian blob to overlap det_size by min_overlap IoU."""
+#     height, width = det_size
 
-    a1 = 1
-    b1 = height + width
-    c1 = width * height * (1 - min_overlap) / (1 + min_overlap)
-    sq1 = math.sqrt(b1 ** 2 - 4 * a1 * c1)
-    r1 = (b1 - sq1) / (2 * a1)
+#     a1 = 1
+#     b1 = height + width
+#     c1 = width * height * (1 - min_overlap) / (1 + min_overlap)
+#     sq1 = math.sqrt(b1 ** 2 - 4 * a1 * c1)
+#     r1 = (b1 - sq1) / (2 * a1)
 
-    a2 = 4
-    b2 = 2 * (height + width)
-    c2 = (1 - min_overlap) * width * height
-    sq2 = math.sqrt(b2 ** 2 - 4 * a2 * c2)
-    r2 = (b2 - sq2) / (2 * a2)
+#     a2 = 4
+#     b2 = 2 * (height + width)
+#     c2 = (1 - min_overlap) * width * height
+#     sq2 = math.sqrt(b2 ** 2 - 4 * a2 * c2)
+#     r2 = (b2 - sq2) / (2 * a2)
 
-    a3 = 4 * min_overlap
-    b3 = -2 * min_overlap * (height + width)
-    c3 = (min_overlap - 1) * width * height
-    sq3 = math.sqrt(b3 ** 2 - 4 * a3 * c3)
-    r3 = (b3 + sq3) / (2 * a3)
+#     a3 = 4 * min_overlap
+#     b3 = -2 * min_overlap * (height + width)
+#     c3 = (min_overlap - 1) * width * height
+#     sq3 = math.sqrt(b3 ** 2 - 4 * a3 * c3)
+#     r3 = (b3 + sq3) / (2 * a3)
 
-    return min(r1, r2, r3)
+#     return min(r1, r2, r3)
 
 
-def _gaussian_2d(radius, sigma, dtype, device):
-    x = torch.arange(-radius, radius + 1, dtype=dtype, device=device).view(1, -1)
-    y = torch.arange(-radius, radius + 1, dtype=dtype, device=device).view(-1, 1)
-    h = (-(x * x + y * y) / (2 * sigma * sigma)).exp()
-    h[h < torch.finfo(h.dtype).eps * h.max()] = 0
-    return h
+# def _gaussian_2d(radius, sigma, dtype, device):
+#     x = torch.arange(-radius, radius + 1, dtype=dtype, device=device).view(1, -1)
+#     y = torch.arange(-radius, radius + 1, dtype=dtype, device=device).view(-1, 1)
+#     h = (-(x * x + y * y) / (2 * sigma * sigma)).exp()
+#     h[h < torch.finfo(h.dtype).eps * h.max()] = 0
+#     return h
 
 
-def gen_gaussian_target(heatmap, center, radius, k=1):
-    """Splat a gaussian blob of the given radius onto heatmap in-place, centered at (x, y)."""
-    diameter = 2 * radius + 1
-    gaussian_kernel = _gaussian_2d(radius, sigma=diameter / 6, dtype=heatmap.dtype, device=heatmap.device)
+# def gen_gaussian_target(heatmap, center, radius, k=1):
+#     """Splat a gaussian blob of the given radius onto heatmap in-place, centered at (x, y)."""
+#     diameter = 2 * radius + 1
+#     gaussian_kernel = _gaussian_2d(radius, sigma=diameter / 6, dtype=heatmap.dtype, device=heatmap.device)
 
-    x, y = center
-    height, width = heatmap.shape[:2]
-    left, right = min(x, radius), min(width - x, radius + 1)
-    top, bottom = min(y, radius), min(height - y, radius + 1)
+#     x, y = center
+#     height, width = heatmap.shape[:2]
+#     left, right = min(x, radius), min(width - x, radius + 1)
+#     top, bottom = min(y, radius), min(height - y, radius + 1)
 
-    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
-    masked_gaussian = gaussian_kernel[radius - top:radius + bottom, radius - left:radius + right]
-    torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
-    return heatmap
-
-
-def _weight_reduce_loss(loss, weight=None, avg_factor=None):
-    if weight is not None:
-        if weight.shape != loss.shape:
-            weight = weight.reshape(loss.shape)
-        loss = loss * weight
-    return loss.sum() / avg_factor if avg_factor is not None else loss.mean()
-
-
-class _WeightedLoss(nn.Module):
-    """(pred, target, weight, avg_factor) calling convention that loss()/get_targets() expect."""
-
-    def __init__(self, loss_weight=1.0):
-        super().__init__()
-        self.loss_weight = loss_weight
-
-    def _elementwise_loss(self, pred, target):
-        raise NotImplementedError
-
-    def forward(self, pred, target, weight=None, avg_factor=None):
-        loss = self._elementwise_loss(pred, target)
-        return self.loss_weight * _weight_reduce_loss(loss, weight, avg_factor)
-
-
-class _L1Loss(_WeightedLoss):
-    def _elementwise_loss(self, pred, target):
-        return torch.abs(pred - target)
-
-
-class _SmoothL1Loss(_WeightedLoss):
-    def _elementwise_loss(self, pred, target):
-        return F.smooth_l1_loss(pred, target, reduction='none')
-
-
-class _CrossEntropyLoss(_WeightedLoss):
-    def _elementwise_loss(self, pred, target):
-        return F.cross_entropy(pred, target.long(), reduction='none')
-
-
-class _GaussianFocalLoss(_WeightedLoss):
-    """CornerNet/CenterNet penalty-reduced focal loss for gaussian heatmap regression."""
-
-    def __init__(self, loss_weight=1.0, alpha=2.0, gamma=4.0):
-        super().__init__(loss_weight)
-        self.alpha = alpha
-        self.gamma = gamma
-
-    def _elementwise_loss(self, pred, target):
-        eps = 1e-12
-        pos_weights = target.eq(1).float()
-        neg_weights = (1 - target).pow(self.gamma)
-        pos_loss = -(pred + eps).log() * (1 - pred).pow(self.alpha) * pos_weights
-        neg_loss = -(1 - pred + eps).log() * pred.pow(self.alpha) * neg_weights
-        return pos_loss + neg_loss
-
-
-_LOSS_TYPES = {
-    'L1Loss': _L1Loss,
-    'SmoothL1Loss': _SmoothL1Loss,
-    'CrossEntropyLoss': _CrossEntropyLoss,
-    'GaussianFocalLoss': _GaussianFocalLoss,
-}
-
-
-def build_loss(cfg):
-    """Stand-in for mmdet's registry-based build_loss - dispatches on cfg['type'] instead."""
-    cfg = dict(cfg)
-    loss_type = cfg.pop('type')
-    return _LOSS_TYPES[loss_type](**cfg)
-
-
-class LidarCenterNetHead(nn.Module):
-    """Objects as Points Head. CenterHead use center_point to indicate object's
-    position. Paper link <https://arxiv.org/abs/1904.07850>
-
-    Args:
-        in_channel (int): Number of channel in the input feature map.
-        feat_channel (int): Number of channel in the intermediate feature map.
-        num_classes (int): Number of categories excluding the background
-            category.
-        loss_center_heatmap (dict | None): Config of center heatmap loss.
-            Default: GaussianFocalLoss.
-        loss_wh (dict | None): Config of wh loss. Default: L1Loss.
-        loss_offset (dict | None): Config of offset loss. Default: L1Loss.
-        train_cfg (dict | None): Training config. Useless in CenterNet,
-            but we keep this variable for SingleStageDetector. Default: None.
-        test_cfg (dict | None): Testing config of CenterNet. Default: None.
-        init_cfg (dict or list[dict], optional): Initialization config dict.
-            Default: None
-    """
-
-    def __init__(self,
-                 in_channel,
-                 feat_channel,
-                 num_classes,
-                 loss_center_heatmap=dict(type='GaussianFocalLoss', loss_weight=1.0),
-                 loss_wh=dict(type='L1Loss', loss_weight=0.1),
-                 loss_offset=dict(type='L1Loss', loss_weight=1.0),
-                 loss_dir_class=dict(type='CrossEntropyLoss', loss_weight=1.0),
-                 loss_dir_res=dict(type='SmoothL1Loss', loss_weight=1.0),
-                 loss_velocity=dict(type='L1Loss', loss_weight=1.0),
-                 loss_brake=dict(type='CrossEntropyLoss', loss_weight=1.0),
-                 train_cfg=None,
-                 test_cfg=None):
-        super().__init__()
-        self.num_classes = num_classes
-        self.heatmap_head = self._build_head(in_channel, feat_channel,
-                                             num_classes)
-        self.wh_head = self._build_head(in_channel, feat_channel, 2)
-        self.offset_head = self._build_head(in_channel, feat_channel, 2)
-        self.num_dir_bins = train_cfg.num_dir_bins
-        self.yaw_class_head = self._build_head(in_channel, feat_channel, self.num_dir_bins)
-        self.yaw_res_head = self._build_head(in_channel, feat_channel, 1)
-        self.velocity_head = self._build_head(in_channel, feat_channel, 1)
-        self.brake_head = self._build_head(in_channel, feat_channel, 2)
-
-        self.loss_center_heatmap = build_loss(loss_center_heatmap)
-        self.loss_wh = build_loss(loss_wh)
-        self.loss_offset = build_loss(loss_offset)
-        self.loss_dir_class = build_loss(loss_dir_class)
-        self.loss_dir_res = build_loss(loss_dir_res)
-        self.loss_velocity = build_loss(loss_velocity)
-        self.loss_brake = build_loss(loss_brake)
-
-        self.train_cfg = train_cfg
-        self.test_cfg = test_cfg
-        self.fp16_enabled = train_cfg.fp16_enabled
-        self.i = 0
-
-    def _build_head(self, in_channel, feat_channel, out_channel):
-        """Build head for each branch."""
-        layer = nn.Sequential(
-            nn.Conv2d(in_channel, feat_channel, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(feat_channel, out_channel, kernel_size=1))
-        return layer
-
-    def init_weights(self):
-        """Initialize weights of the head."""
-        bias_init = bias_init_with_prob(self.train_cfg.center_net_bias_init_with_prob)
-        self.heatmap_head[-1].bias.data.fill_(bias_init)
-        for head in [self.wh_head, self.offset_head]:
-            for m in head.modules():
-                if isinstance(m, nn.Conv2d):
-                    normal_init(m, std=self.train_cfg.center_net_normal_init_std)
-
-    def forward(self, feats):
-        """Forward features. Notice CenterNet head does not use FPN.
-
-        Args:
-            feats (tuple[Tensor]): Features from the upstream network, each is
-                a 4D-tensor.
-
-        Returns:
-            center_heatmap_preds (List[Tensor]): center predict heatmaps for
-                all levels, the channels number is num_classes.
-            wh_preds (List[Tensor]): wh predicts for all levels, the channels
-                number is 2.
-            offset_preds (List[Tensor]): offset predicts for all levels, the
-               channels number is 2.
-        """
-        return multi_apply(self.forward_single, feats)
-
-    def forward_single(self, feat):
-        """Forward feature of a single level.
-
-        Args:
-            feat (Tensor): Feature of a single level.
-
-        Returns:
-            center_heatmap_pred (Tensor): center predict heatmaps, the
-               channels number is num_classes.
-            wh_pred (Tensor): wh predicts, the channels number is 2.
-            offset_pred (Tensor): offset predicts, the channels number is 2.
-        """
-        center_heatmap_pred = self.heatmap_head(feat).sigmoid()
-        wh_pred = self.wh_head(feat)
-        offset_pred = self.offset_head(feat)
-        yaw_class_pred = self.yaw_class_head(feat)
-        yaw_res_pred = self.yaw_res_head(feat)
-        velocity_pred = self.velocity_head(feat)
-        brake_pred = self.brake_head(feat)
-
-        return center_heatmap_pred, wh_pred, offset_pred, yaw_class_pred, yaw_res_pred, velocity_pred, brake_pred
-
-    @force_fp32(apply_to=('center_heatmap_preds', 'wh_preds', 'offset_preds', 'yaw_class_preds', 'yaw_res_preds', 'velocity_pred', 'brake_pred'))
-    def loss(self,
-             center_heatmap_preds,
-             wh_preds,
-             offset_preds,
-             yaw_class_preds,
-             yaw_res_preds,
-             velocity_preds,
-             brake_preds,
-             gt_bboxes,
-             gt_labels,
-             img_metas,
-             gt_bboxes_ignore=None):
-        """Compute losses of the head.
-
-        Args:
-            center_heatmap_preds (list[Tensor]): center predict heatmaps for
-               all levels with shape (B, num_classes, H, W).
-            wh_preds (list[Tensor]): wh predicts for all levels with
-               shape (B, 2, H, W).
-            offset_preds (list[Tensor]): offset predicts for all levels
-               with shape (B, 2, H, W).
-            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
-                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
-            gt_labels (list[Tensor]): class indices corresponding to each box.
-            img_metas (list[dict]): Meta information of each image, e.g.,
-                image size, scaling factor, etc.
-            gt_bboxes_ignore (None | list[Tensor]): specify which bounding
-                boxes can be ignored when computing the loss. Default: None
-
-        Returns:
-            dict[str, Tensor]: which has components below:
-                - loss_center_heatmap (Tensor): loss of center heatmap.
-                - loss_wh (Tensor): loss of hw heatmap
-                - loss_offset (Tensor): loss of offset heatmap.
-        """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
-        center_heatmap_pred = center_heatmap_preds[0]
-        wh_pred = wh_preds[0]
-        offset_pred = offset_preds[0]
-        yaw_class_pred = yaw_class_preds[0]
-        yaw_res_pred = yaw_res_preds[0]
-        velocity_pred = velocity_preds[0]
-        brake_pred = brake_preds[0]
-
-        target_result, avg_factor = self.get_targets(gt_bboxes, gt_labels, gt_bboxes_ignore,
-                                                     center_heatmap_pred.shape)
+#     masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+#     masked_gaussian = gaussian_kernel[radius - top:radius + bottom, radius - left:radius + right]
+#     torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+#     return heatmap
+
+
+# def _weight_reduce_loss(loss, weight=None, avg_factor=None):
+#     if weight is not None:
+#         if weight.shape != loss.shape:
+#             weight = weight.reshape(loss.shape)
+#         loss = loss * weight
+#     return loss.sum() / avg_factor if avg_factor is not None else loss.mean()
+
+
+# class _WeightedLoss(nn.Module):
+#     """(pred, target, weight, avg_factor) calling convention that loss()/get_targets() expect."""
+
+#     def __init__(self, loss_weight=1.0):
+#         super().__init__()
+#         self.loss_weight = loss_weight
+
+#     def _elementwise_loss(self, pred, target):
+#         raise NotImplementedError
+
+#     def forward(self, pred, target, weight=None, avg_factor=None):
+#         loss = self._elementwise_loss(pred, target)
+#         return self.loss_weight * _weight_reduce_loss(loss, weight, avg_factor)
+
+
+# class _L1Loss(_WeightedLoss):
+#     def _elementwise_loss(self, pred, target):
+#         return torch.abs(pred - target)
+
+
+# class _SmoothL1Loss(_WeightedLoss):
+#     def _elementwise_loss(self, pred, target):
+#         return F.smooth_l1_loss(pred, target, reduction='none')
+
+
+# class _CrossEntropyLoss(_WeightedLoss):
+#     def _elementwise_loss(self, pred, target):
+#         return F.cross_entropy(pred, target.long(), reduction='none')
+
+
+# class _GaussianFocalLoss(_WeightedLoss):
+#     """CornerNet/CenterNet penalty-reduced focal loss for gaussian heatmap regression."""
+
+#     def __init__(self, loss_weight=1.0, alpha=2.0, gamma=4.0):
+#         super().__init__(loss_weight)
+#         self.alpha = alpha
+#         self.gamma = gamma
+
+#     def _elementwise_loss(self, pred, target):
+#         eps = 1e-12
+#         pos_weights = target.eq(1).float()
+#         neg_weights = (1 - target).pow(self.gamma)
+#         pos_loss = -(pred + eps).log() * (1 - pred).pow(self.alpha) * pos_weights
+#         neg_loss = -(1 - pred + eps).log() * pred.pow(self.alpha) * neg_weights
+#         return pos_loss + neg_loss
+
+
+# _LOSS_TYPES = {
+#     'L1Loss': _L1Loss,
+#     'SmoothL1Loss': _SmoothL1Loss,
+#     'CrossEntropyLoss': _CrossEntropyLoss,
+#     'GaussianFocalLoss': _GaussianFocalLoss,
+# }
+
+
+# def build_loss(cfg):
+#     """Stand-in for mmdet's registry-based build_loss - dispatches on cfg['type'] instead."""
+#     cfg = dict(cfg)
+#     loss_type = cfg.pop('type')
+#     return _LOSS_TYPES[loss_type](**cfg)
+
+
+# class LidarCenterNetHead(nn.Module):
+#     """Objects as Points Head. CenterHead use center_point to indicate object's
+#     position. Paper link <https://arxiv.org/abs/1904.07850>
+
+#     Args:
+#         in_channel (int): Number of channel in the input feature map.
+#         feat_channel (int): Number of channel in the intermediate feature map.
+#         num_classes (int): Number of categories excluding the background
+#             category.
+#         loss_center_heatmap (dict | None): Config of center heatmap loss.
+#             Default: GaussianFocalLoss.
+#         loss_wh (dict | None): Config of wh loss. Default: L1Loss.
+#         loss_offset (dict | None): Config of offset loss. Default: L1Loss.
+#         train_cfg (dict | None): Training config. Useless in CenterNet,
+#             but we keep this variable for SingleStageDetector. Default: None.
+#         test_cfg (dict | None): Testing config of CenterNet. Default: None.
+#         init_cfg (dict or list[dict], optional): Initialization config dict.
+#             Default: None
+#     """
+
+#     def __init__(self,
+#                  in_channel,
+#                  feat_channel,
+#                  num_classes,
+#                  loss_center_heatmap=dict(type='GaussianFocalLoss', loss_weight=1.0),
+#                  loss_wh=dict(type='L1Loss', loss_weight=0.1),
+#                  loss_offset=dict(type='L1Loss', loss_weight=1.0),
+#                  loss_dir_class=dict(type='CrossEntropyLoss', loss_weight=1.0),
+#                  loss_dir_res=dict(type='SmoothL1Loss', loss_weight=1.0),
+#                  loss_velocity=dict(type='L1Loss', loss_weight=1.0),
+#                  loss_brake=dict(type='CrossEntropyLoss', loss_weight=1.0),
+#                  train_cfg=None,
+#                  test_cfg=None):
+#         super().__init__()
+#         self.num_classes = num_classes
+#         self.heatmap_head = self._build_head(in_channel, feat_channel,
+#                                              num_classes)
+#         self.wh_head = self._build_head(in_channel, feat_channel, 2)
+#         self.offset_head = self._build_head(in_channel, feat_channel, 2)
+#         self.num_dir_bins = train_cfg.num_dir_bins
+#         self.yaw_class_head = self._build_head(in_channel, feat_channel, self.num_dir_bins)
+#         self.yaw_res_head = self._build_head(in_channel, feat_channel, 1)
+#         self.velocity_head = self._build_head(in_channel, feat_channel, 1)
+#         self.brake_head = self._build_head(in_channel, feat_channel, 2)
+
+#         self.loss_center_heatmap = build_loss(loss_center_heatmap)
+#         self.loss_wh = build_loss(loss_wh)
+#         self.loss_offset = build_loss(loss_offset)
+#         self.loss_dir_class = build_loss(loss_dir_class)
+#         self.loss_dir_res = build_loss(loss_dir_res)
+#         self.loss_velocity = build_loss(loss_velocity)
+#         self.loss_brake = build_loss(loss_brake)
+
+#         self.train_cfg = train_cfg
+#         self.test_cfg = test_cfg
+#         self.fp16_enabled = train_cfg.fp16_enabled
+#         self.i = 0
+
+#     def _build_head(self, in_channel, feat_channel, out_channel):
+#         """Build head for each branch."""
+#         layer = nn.Sequential(
+#             nn.Conv2d(in_channel, feat_channel, kernel_size=3, padding=1),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(feat_channel, out_channel, kernel_size=1))
+#         return layer
+
+#     def init_weights(self):
+#         """Initialize weights of the head."""
+#         bias_init = bias_init_with_prob(self.train_cfg.center_net_bias_init_with_prob)
+#         self.heatmap_head[-1].bias.data.fill_(bias_init)
+#         for head in [self.wh_head, self.offset_head]:
+#             for m in head.modules():
+#                 if isinstance(m, nn.Conv2d):
+#                     normal_init(m, std=self.train_cfg.center_net_normal_init_std)
+
+#     def forward(self, feats):
+#         """Forward features. Notice CenterNet head does not use FPN.
+
+#         Args:
+#             feats (tuple[Tensor]): Features from the upstream network, each is
+#                 a 4D-tensor.
+
+#         Returns:
+#             center_heatmap_preds (List[Tensor]): center predict heatmaps for
+#                 all levels, the channels number is num_classes.
+#             wh_preds (List[Tensor]): wh predicts for all levels, the channels
+#                 number is 2.
+#             offset_preds (List[Tensor]): offset predicts for all levels, the
+#                channels number is 2.
+#         """
+#         return multi_apply(self.forward_single, feats)
+
+#     def forward_single(self, feat):
+#         """Forward feature of a single level.
+
+#         Args:
+#             feat (Tensor): Feature of a single level.
+
+#         Returns:
+#             center_heatmap_pred (Tensor): center predict heatmaps, the
+#                channels number is num_classes.
+#             wh_pred (Tensor): wh predicts, the channels number is 2.
+#             offset_pred (Tensor): offset predicts, the channels number is 2.
+#         """
+#         center_heatmap_pred = self.heatmap_head(feat).sigmoid()
+#         wh_pred = self.wh_head(feat)
+#         offset_pred = self.offset_head(feat)
+#         yaw_class_pred = self.yaw_class_head(feat)
+#         yaw_res_pred = self.yaw_res_head(feat)
+#         velocity_pred = self.velocity_head(feat)
+#         brake_pred = self.brake_head(feat)
+
+#         return center_heatmap_pred, wh_pred, offset_pred, yaw_class_pred, yaw_res_pred, velocity_pred, brake_pred
+
+#     @force_fp32(apply_to=('center_heatmap_preds', 'wh_preds', 'offset_preds', 'yaw_class_preds', 'yaw_res_preds', 'velocity_pred', 'brake_pred'))
+#     def loss(self,
+#              center_heatmap_preds,
+#              wh_preds,
+#              offset_preds,
+#              yaw_class_preds,
+#              yaw_res_preds,
+#              velocity_preds,
+#              brake_preds,
+#              gt_bboxes,
+#              gt_labels,
+#              img_metas,
+#              gt_bboxes_ignore=None):
+#         """Compute losses of the head.
+
+#         Args:
+#             center_heatmap_preds (list[Tensor]): center predict heatmaps for
+#                all levels with shape (B, num_classes, H, W).
+#             wh_preds (list[Tensor]): wh predicts for all levels with
+#                shape (B, 2, H, W).
+#             offset_preds (list[Tensor]): offset predicts for all levels
+#                with shape (B, 2, H, W).
+#             gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
+#                 shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+#             gt_labels (list[Tensor]): class indices corresponding to each box.
+#             img_metas (list[dict]): Meta information of each image, e.g.,
+#                 image size, scaling factor, etc.
+#             gt_bboxes_ignore (None | list[Tensor]): specify which bounding
+#                 boxes can be ignored when computing the loss. Default: None
+
+#         Returns:
+#             dict[str, Tensor]: which has components below:
+#                 - loss_center_heatmap (Tensor): loss of center heatmap.
+#                 - loss_wh (Tensor): loss of hw heatmap
+#                 - loss_offset (Tensor): loss of offset heatmap.
+#         """
+#         assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
+#         center_heatmap_pred = center_heatmap_preds[0]
+#         wh_pred = wh_preds[0]
+#         offset_pred = offset_preds[0]
+#         yaw_class_pred = yaw_class_preds[0]
+#         yaw_res_pred = yaw_res_preds[0]
+#         velocity_pred = velocity_preds[0]
+#         brake_pred = brake_preds[0]
+
+#         target_result, avg_factor = self.get_targets(gt_bboxes, gt_labels, gt_bboxes_ignore,
+#                                                      center_heatmap_pred.shape)
         
-        center_heatmap_target = target_result['center_heatmap_target']
-        wh_target = target_result['wh_target']
-        yaw_class_target = target_result['yaw_class_target']
-        yaw_res_target = target_result['yaw_res_target']
-        offset_target = target_result['offset_target']
-        velocity_target = target_result['velocity_target']
-        brake_target = target_result['brake_target']
-        wh_offset_target_weight = target_result['wh_offset_target_weight']
+#         center_heatmap_target = target_result['center_heatmap_target']
+#         wh_target = target_result['wh_target']
+#         yaw_class_target = target_result['yaw_class_target']
+#         yaw_res_target = target_result['yaw_res_target']
+#         offset_target = target_result['offset_target']
+#         velocity_target = target_result['velocity_target']
+#         brake_target = target_result['brake_target']
+#         wh_offset_target_weight = target_result['wh_offset_target_weight']
 
-        # Since the channel of wh_target and offset_target is 2, the avg_factor
-        # of loss_center_heatmap is always 1/2 of loss_wh and loss_offset.
-        loss_center_heatmap = self.loss_center_heatmap(
-            center_heatmap_pred, center_heatmap_target, avg_factor=avg_factor)
-        loss_wh = self.loss_wh(
-            wh_pred,
-            wh_target,
-            wh_offset_target_weight,
-            avg_factor=avg_factor * 2)
-        loss_offset = self.loss_offset(
-            offset_pred,
-            offset_target,
-            wh_offset_target_weight,
-            avg_factor=avg_factor * 2)
-        loss_yaw_class = self.loss_dir_class(
-            yaw_class_pred,
-            yaw_class_target,
-            wh_offset_target_weight[:, :1, ...],
-            avg_factor=avg_factor)
-        loss_yaw_res = self.loss_dir_res(
-            yaw_res_pred,
-            yaw_res_target,
-            wh_offset_target_weight[:, :1, ...],
-            avg_factor=avg_factor)
-        loss_velocity = self.loss_velocity(
-            velocity_pred,
-            velocity_target,
-            wh_offset_target_weight[:, :1, ...],
-            avg_factor=avg_factor)
-        loss_brake = self.loss_brake(
-            brake_pred,
-            brake_target,
-            wh_offset_target_weight[:, :1, ...],
-            avg_factor=avg_factor)
+#         # Since the channel of wh_target and offset_target is 2, the avg_factor
+#         # of loss_center_heatmap is always 1/2 of loss_wh and loss_offset.
+#         loss_center_heatmap = self.loss_center_heatmap(
+#             center_heatmap_pred, center_heatmap_target, avg_factor=avg_factor)
+#         loss_wh = self.loss_wh(
+#             wh_pred,
+#             wh_target,
+#             wh_offset_target_weight,
+#             avg_factor=avg_factor * 2)
+#         loss_offset = self.loss_offset(
+#             offset_pred,
+#             offset_target,
+#             wh_offset_target_weight,
+#             avg_factor=avg_factor * 2)
+#         loss_yaw_class = self.loss_dir_class(
+#             yaw_class_pred,
+#             yaw_class_target,
+#             wh_offset_target_weight[:, :1, ...],
+#             avg_factor=avg_factor)
+#         loss_yaw_res = self.loss_dir_res(
+#             yaw_res_pred,
+#             yaw_res_target,
+#             wh_offset_target_weight[:, :1, ...],
+#             avg_factor=avg_factor)
+#         loss_velocity = self.loss_velocity(
+#             velocity_pred,
+#             velocity_target,
+#             wh_offset_target_weight[:, :1, ...],
+#             avg_factor=avg_factor)
+#         loss_brake = self.loss_brake(
+#             brake_pred,
+#             brake_target,
+#             wh_offset_target_weight[:, :1, ...],
+#             avg_factor=avg_factor)
 
-        return dict(
-            loss_center_heatmap=loss_center_heatmap,
-            loss_wh=loss_wh,
-            loss_offset=loss_offset,
-            loss_yaw_class=loss_yaw_class,
-            loss_yaw_res=loss_yaw_res,
-            loss_velocity=loss_velocity,
-            loss_brake=loss_brake)
+#         return dict(
+#             loss_center_heatmap=loss_center_heatmap,
+#             loss_wh=loss_wh,
+#             loss_offset=loss_offset,
+#             loss_yaw_class=loss_yaw_class,
+#             loss_yaw_res=loss_yaw_res,
+#             loss_velocity=loss_velocity,
+#             loss_brake=loss_brake)
 
-    def angle2class(self, angle):
-        """Convert continuous angle to a discrete class and a residual.
-        Convert continuous angle to a discrete class and a small
-        regression number from class center angle to current angle.
-        Args:
-            angle (torch.Tensor): Angle is from 0-2pi (or -pi~pi),
-                class center at 0, 1*(2pi/N), 2*(2pi/N) ...  (N-1)*(2pi/N).
-        Returns:
-            tuple: Encoded discrete class and residual.
-        """
-        angle = angle % (2 * np.pi)
-        angle_per_class = 2 * np.pi / float(self.num_dir_bins)
-        shifted_angle = (angle + angle_per_class / 2) % (2 * np.pi)
-        #NOTE changed this to not trigger a warning anymore. Rounding trunc should be the same as floor as long as angle is positive.
-        # I kept it trunc to not change the behavior and keep backwards compatibility. When training a new model "floor" might be the better option.
-        angle_cls = torch.div(shifted_angle, angle_per_class, rounding_mode="trunc")
-        angle_res = shifted_angle - (angle_cls * angle_per_class + angle_per_class / 2)
-        return angle_cls.long(), angle_res
+#     def angle2class(self, angle):
+#         """Convert continuous angle to a discrete class and a residual.
+#         Convert continuous angle to a discrete class and a small
+#         regression number from class center angle to current angle.
+#         Args:
+#             angle (torch.Tensor): Angle is from 0-2pi (or -pi~pi),
+#                 class center at 0, 1*(2pi/N), 2*(2pi/N) ...  (N-1)*(2pi/N).
+#         Returns:
+#             tuple: Encoded discrete class and residual.
+#         """
+#         angle = angle % (2 * np.pi)
+#         angle_per_class = 2 * np.pi / float(self.num_dir_bins)
+#         shifted_angle = (angle + angle_per_class / 2) % (2 * np.pi)
+#         #NOTE changed this to not trigger a warning anymore. Rounding trunc should be the same as floor as long as angle is positive.
+#         # I kept it trunc to not change the behavior and keep backwards compatibility. When training a new model "floor" might be the better option.
+#         angle_cls = torch.div(shifted_angle, angle_per_class, rounding_mode="trunc")
+#         angle_res = shifted_angle - (angle_cls * angle_per_class + angle_per_class / 2)
+#         return angle_cls.long(), angle_res
 
-    def class2angle(self, angle_cls, angle_res, limit_period=True):
-        """Inverse function to angle2class.
-        Args:
-            angle_cls (torch.Tensor): Angle class to decode.
-            angle_res (torch.Tensor): Angle residual to decode.
-            limit_period (bool): Whether to limit angle to [-pi, pi].
-        Returns:
-            torch.Tensor: Angle decoded from angle_cls and angle_res.
-        """
-        angle_per_class = 2 * np.pi / float(self.num_dir_bins)
-        angle_center = angle_cls.float() * angle_per_class
-        angle = angle_center + angle_res
-        if limit_period:
-            angle[angle > np.pi] -= 2 * np.pi
-        return angle
+#     def class2angle(self, angle_cls, angle_res, limit_period=True):
+#         """Inverse function to angle2class.
+#         Args:
+#             angle_cls (torch.Tensor): Angle class to decode.
+#             angle_res (torch.Tensor): Angle residual to decode.
+#             limit_period (bool): Whether to limit angle to [-pi, pi].
+#         Returns:
+#             torch.Tensor: Angle decoded from angle_cls and angle_res.
+#         """
+#         angle_per_class = 2 * np.pi / float(self.num_dir_bins)
+#         angle_center = angle_cls.float() * angle_per_class
+#         angle = angle_center + angle_res
+#         if limit_period:
+#             angle[angle > np.pi] -= 2 * np.pi
+#         return angle
 
-    def get_targets(self, gt_bboxes, gt_labels, gt_ignores, feat_shape):
-        """Compute regression and classification targets in multiple images.
+#     def get_targets(self, gt_bboxes, gt_labels, gt_ignores, feat_shape):
+#         """Compute regression and classification targets in multiple images.
 
-        Args:
-            gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
-                shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
-            gt_labels (list[Tensor]): class indices corresponding to each box.
-            feat_shape (list[int]): feature map shape with value [B, _, H, W]
-            img_shape (list[int]): image shape in [h, w] format.
+#         Args:
+#             gt_bboxes (list[Tensor]): Ground truth bboxes for each image with
+#                 shape (num_gts, 4) in [tl_x, tl_y, br_x, br_y] format.
+#             gt_labels (list[Tensor]): class indices corresponding to each box.
+#             feat_shape (list[int]): feature map shape with value [B, _, H, W]
+#             img_shape (list[int]): image shape in [h, w] format.
 
-        Returns:
-            tuple[dict,float]: The float value is mean avg_factor, the dict has
-               components below:
-               - center_heatmap_target (Tensor): targets of center heatmap, \
-                   shape (B, num_classes, H, W).
-               - wh_target (Tensor): targets of wh predict, shape \
-                   (B, 2, H, W).
-               - offset_target (Tensor): targets of offset predict, shape \
-                   (B, 2, H, W).
-               - wh_offset_target_weight (Tensor): weights of wh and offset \
-                   predict, shape (B, 2, H, W).
-        """
-        img_h, img_w = self.train_cfg.lidar_resolution_height, self.train_cfg.lidar_resolution_width
-        bs, _, feat_h, feat_w = feat_shape
+#         Returns:
+#             tuple[dict,float]: The float value is mean avg_factor, the dict has
+#                components below:
+#                - center_heatmap_target (Tensor): targets of center heatmap, \
+#                    shape (B, num_classes, H, W).
+#                - wh_target (Tensor): targets of wh predict, shape \
+#                    (B, 2, H, W).
+#                - offset_target (Tensor): targets of offset predict, shape \
+#                    (B, 2, H, W).
+#                - wh_offset_target_weight (Tensor): weights of wh and offset \
+#                    predict, shape (B, 2, H, W).
+#         """
+#         img_h, img_w = self.train_cfg.lidar_resolution_height, self.train_cfg.lidar_resolution_width
+#         bs, _, feat_h, feat_w = feat_shape
 
-        width_ratio = float(feat_w / img_w)
-        height_ratio = float(feat_h / img_h)
+#         width_ratio = float(feat_w / img_w)
+#         height_ratio = float(feat_h / img_h)
 
-        center_heatmap_target = gt_bboxes[-1].new_zeros(
-            [bs, self.num_classes, feat_h, feat_w])
-        wh_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
-        offset_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
-        yaw_class_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w]).long()
-        yaw_res_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w])
-        velocity_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w])
-        brake_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w]).long()
+#         center_heatmap_target = gt_bboxes[-1].new_zeros(
+#             [bs, self.num_classes, feat_h, feat_w])
+#         wh_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
+#         offset_target = gt_bboxes[-1].new_zeros([bs, 2, feat_h, feat_w])
+#         yaw_class_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w]).long()
+#         yaw_res_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w])
+#         velocity_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w])
+#         brake_target = gt_bboxes[-1].new_zeros([bs, 1, feat_h, feat_w]).long()
  
-        wh_offset_target_weight = gt_bboxes[-1].new_zeros(
-            [bs, 2, feat_h, feat_w])
+#         wh_offset_target_weight = gt_bboxes[-1].new_zeros(
+#             [bs, 2, feat_h, feat_w])
 
-        for batch_id in range(bs):
-            gt_bbox = gt_bboxes[0][batch_id]
-            gt_label = gt_labels[0][batch_id]
-            gt_ignore = gt_ignores[0][batch_id]
+#         for batch_id in range(bs):
+#             gt_bbox = gt_bboxes[0][batch_id]
+#             gt_label = gt_labels[0][batch_id]
+#             gt_ignore = gt_ignores[0][batch_id]
 
-            center_x = gt_bbox[:, [0]] * width_ratio
-            center_y = gt_bbox[:, [1]] * width_ratio
-            gt_centers = torch.cat((center_x, center_y), dim=1)
+#             center_x = gt_bbox[:, [0]] * width_ratio
+#             center_y = gt_bbox[:, [1]] * width_ratio
+#             gt_centers = torch.cat((center_x, center_y), dim=1)
 
-            for j, ct in enumerate(gt_centers):
-                if gt_ignore[j]:
-                    continue
+#             for j, ct in enumerate(gt_centers):
+#                 if gt_ignore[j]:
+#                     continue
 
-                ctx_int, cty_int = ct.int()
-                ctx, cty = ct
-                scale_box_h = gt_bbox[j, 3] * height_ratio
-                scale_box_w = gt_bbox[j, 2] * width_ratio
+#                 ctx_int, cty_int = ct.int()
+#                 ctx, cty = ct
+#                 scale_box_h = gt_bbox[j, 3] * height_ratio
+#                 scale_box_w = gt_bbox[j, 2] * width_ratio
                 
-                radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.1)
-                radius = max(2, int(radius))
-                ind = gt_label[j].long()
+#                 radius = gaussian_radius([scale_box_h, scale_box_w], min_overlap=0.1)
+#                 radius = max(2, int(radius))
+#                 ind = gt_label[j].long()
                 
-                gen_gaussian_target(center_heatmap_target[batch_id, ind], [ctx_int, cty_int], radius)
+#                 gen_gaussian_target(center_heatmap_target[batch_id, ind], [ctx_int, cty_int], radius)
 
-                wh_target[batch_id, 0, cty_int, ctx_int] = scale_box_w
-                wh_target[batch_id, 1, cty_int, ctx_int] = scale_box_h
+#                 wh_target[batch_id, 0, cty_int, ctx_int] = scale_box_w
+#                 wh_target[batch_id, 1, cty_int, ctx_int] = scale_box_h
                 
-                yaw_class, yaw_res = self.angle2class(gt_bbox[j, 4])
+#                 yaw_class, yaw_res = self.angle2class(gt_bbox[j, 4])
 
-                yaw_class_target[batch_id, 0, cty_int, ctx_int] = yaw_class
-                yaw_res_target[batch_id, 0, cty_int, ctx_int] = yaw_res
+#                 yaw_class_target[batch_id, 0, cty_int, ctx_int] = yaw_class
+#                 yaw_res_target[batch_id, 0, cty_int, ctx_int] = yaw_res
 
-                velocity_target[batch_id, 0, cty_int, ctx_int] = gt_bbox[j, 5]
-                brake_target[batch_id, 0, cty_int, ctx_int] = gt_bbox[j, 6].long()
+#                 velocity_target[batch_id, 0, cty_int, ctx_int] = gt_bbox[j, 5]
+#                 brake_target[batch_id, 0, cty_int, ctx_int] = gt_bbox[j, 6].long()
                  
-                offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
-                offset_target[batch_id, 1, cty_int, ctx_int] = cty - cty_int
-                wh_offset_target_weight[batch_id, :, cty_int, ctx_int] = 1
+#                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
+#                 offset_target[batch_id, 1, cty_int, ctx_int] = cty - cty_int
+#                 wh_offset_target_weight[batch_id, :, cty_int, ctx_int] = 1
 
-        avg_factor = max(1, center_heatmap_target.eq(1).sum())
-        target_result = dict(
-            center_heatmap_target=center_heatmap_target,
-            wh_target=wh_target,
-            yaw_class_target=yaw_class_target.squeeze(1),
-            yaw_res_target=yaw_res_target,
-            offset_target=offset_target,
-            velocity_target=velocity_target,
-            brake_target=brake_target.squeeze(1),
-            wh_offset_target_weight=wh_offset_target_weight)
-        return target_result, avg_factor
+#         avg_factor = max(1, center_heatmap_target.eq(1).sum())
+#         target_result = dict(
+#             center_heatmap_target=center_heatmap_target,
+#             wh_target=wh_target,
+#             yaw_class_target=yaw_class_target.squeeze(1),
+#             yaw_res_target=yaw_res_target,
+#             offset_target=offset_target,
+#             velocity_target=velocity_target,
+#             brake_target=brake_target.squeeze(1),
+#             wh_offset_target_weight=wh_offset_target_weight)
+#         return target_result, avg_factor
 
-    def get_bboxes(self,
-                   center_heatmap_preds,
-                   wh_preds,
-                   offset_preds,
-                   yaw_class_preds,
-                   yaw_res_preds,
-                   velocity_preds, 
-                   brake_preds,
-                   rescale=True,
-                   with_nms=False):
-        """Transform network output for a batch into bbox predictions.
+#     def get_bboxes(self,
+#                    center_heatmap_preds,
+#                    wh_preds,
+#                    offset_preds,
+#                    yaw_class_preds,
+#                    yaw_res_preds,
+#                    velocity_preds, 
+#                    brake_preds,
+#                    rescale=True,
+#                    with_nms=False):
+#         """Transform network output for a batch into bbox predictions.
 
-        Args:
-            center_heatmap_preds (list[Tensor]): center predict heatmaps for
-                all levels with shape (B, num_classes, H, W).
-            wh_preds (list[Tensor]): wh predicts for all levels with
-                shape (B, 2, H, W).
-            offset_preds (list[Tensor]): offset predicts for all levels
-                with shape (B, 2, H, W).
-            img_metas (list[dict]): Meta information of each image, e.g.,
-                image size, scaling factor, etc.
-            rescale (bool): If True, return boxes in original image space.
-                Default: True.
-            with_nms (bool): If True, do nms before return boxes.
-                Default: False.
+#         Args:
+#             center_heatmap_preds (list[Tensor]): center predict heatmaps for
+#                 all levels with shape (B, num_classes, H, W).
+#             wh_preds (list[Tensor]): wh predicts for all levels with
+#                 shape (B, 2, H, W).
+#             offset_preds (list[Tensor]): offset predicts for all levels
+#                 with shape (B, 2, H, W).
+#             img_metas (list[dict]): Meta information of each image, e.g.,
+#                 image size, scaling factor, etc.
+#             rescale (bool): If True, return boxes in original image space.
+#                 Default: True.
+#             with_nms (bool): If True, do nms before return boxes.
+#                 Default: False.
 
-        Returns:
-            list[tuple[Tensor, Tensor]]: Each item in result_list is 2-tuple.
-                The first item is an (n, 5) tensor, where 5 represent
-                (tl_x, tl_y, br_x, br_y, score) and the score between 0 and 1.
-                The shape of the second tensor in the tuple is (n,), and
-                each element represents the class label of the corresponding
-                box.
-        """
-        assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
+#         Returns:
+#             list[tuple[Tensor, Tensor]]: Each item in result_list is 2-tuple.
+#                 The first item is an (n, 5) tensor, where 5 represent
+#                 (tl_x, tl_y, br_x, br_y, score) and the score between 0 and 1.
+#                 The shape of the second tensor in the tuple is (n,), and
+#                 each element represents the class label of the corresponding
+#                 box.
+#         """
+#         assert len(center_heatmap_preds) == len(wh_preds) == len(offset_preds) == 1
 
-        batch_det_bboxes, batch_labels = self.decode_heatmap(
-            center_heatmap_preds[0],
-            wh_preds[0],
-            offset_preds[0],
-            yaw_class_preds[0],
-            yaw_res_preds[0],
-            velocity_preds[0], 
-            brake_preds[0],
-            k=self.train_cfg.top_k_center_keypoints,
-            kernel=self.train_cfg.center_net_max_pooling_kernel)
+#         batch_det_bboxes, batch_labels = self.decode_heatmap(
+#             center_heatmap_preds[0],
+#             wh_preds[0],
+#             offset_preds[0],
+#             yaw_class_preds[0],
+#             yaw_res_preds[0],
+#             velocity_preds[0], 
+#             brake_preds[0],
+#             k=self.train_cfg.top_k_center_keypoints,
+#             kernel=self.train_cfg.center_net_max_pooling_kernel)
 
-        if with_nms:
-            det_results = []
-            for (det_bboxes, det_labels) in zip(batch_det_bboxes,
-                                                batch_labels):
-                det_bbox, det_label = self._bboxes_nms(det_bboxes, det_labels,
-                                                       self.test_cfg)
-                det_results.append(tuple([det_bbox, det_label]))
-        else:
-            det_results = [
-                tuple(bs) for bs in zip(batch_det_bboxes, batch_labels)
-            ]
-        return det_results
+#         if with_nms:
+#             det_results = []
+#             for (det_bboxes, det_labels) in zip(batch_det_bboxes,
+#                                                 batch_labels):
+#                 det_bbox, det_label = self._bboxes_nms(det_bboxes, det_labels,
+#                                                        self.test_cfg)
+#                 det_results.append(tuple([det_bbox, det_label]))
+#         else:
+#             det_results = [
+#                 tuple(bs) for bs in zip(batch_det_bboxes, batch_labels)
+#             ]
+#         return det_results
 
-    def decode_heatmap(self,
-                       center_heatmap_pred,
-                       wh_pred,
-                       offset_pred,
-                       yaw_class_pred,
-                       yaw_res_pred,
-                       velocity_pred,
-                       brake_pred,
-                       k=100,
-                       kernel=3):
-        """Transform outputs into detections raw bbox prediction.
+#     def decode_heatmap(self,
+#                        center_heatmap_pred,
+#                        wh_pred,
+#                        offset_pred,
+#                        yaw_class_pred,
+#                        yaw_res_pred,
+#                        velocity_pred,
+#                        brake_pred,
+#                        k=100,
+#                        kernel=3):
+#         """Transform outputs into detections raw bbox prediction.
 
-        Args:
-            center_heatmap_pred (Tensor): center predict heatmap,
-               shape (B, num_classes, H, W).
-            wh_pred (Tensor): wh predict, shape (B, 2, H, W).
-            offset_pred (Tensor): offset predict, shape (B, 2, H, W).
-            img_shape (list[int]): image shape in [h, w] format.
-            k (int): Get top k center keypoints from heatmap. Default 100.
-            kernel (int): Max pooling kernel for extract local maximum pixels.
-               Default 3.
+#         Args:
+#             center_heatmap_pred (Tensor): center predict heatmap,
+#                shape (B, num_classes, H, W).
+#             wh_pred (Tensor): wh predict, shape (B, 2, H, W).
+#             offset_pred (Tensor): offset predict, shape (B, 2, H, W).
+#             img_shape (list[int]): image shape in [h, w] format.
+#             k (int): Get top k center keypoints from heatmap. Default 100.
+#             kernel (int): Max pooling kernel for extract local maximum pixels.
+#                Default 3.
 
-        Returns:
-            tuple[torch.Tensor]: Decoded output of CenterNetHead, containing
-               the following Tensors:
+#         Returns:
+#             tuple[torch.Tensor]: Decoded output of CenterNetHead, containing
+#                the following Tensors:
 
-              - batch_bboxes (Tensor): Coords of each box with shape (B, k, 5)
-              - batch_topk_labels (Tensor): Categories of each box with \
-                  shape (B, k)
-        """
-        center_heatmap_pred = get_local_maximum(
-            center_heatmap_pred, kernel=kernel)
+#               - batch_bboxes (Tensor): Coords of each box with shape (B, k, 5)
+#               - batch_topk_labels (Tensor): Categories of each box with \
+#                   shape (B, k)
+#         """
+#         center_heatmap_pred = get_local_maximum(
+#             center_heatmap_pred, kernel=kernel)
 
-        *batch_dets, topk_ys, topk_xs = get_topk_from_heatmap(
-            center_heatmap_pred, k=k)
-        batch_scores, batch_index, batch_topk_labels = batch_dets
+#         *batch_dets, topk_ys, topk_xs = get_topk_from_heatmap(
+#             center_heatmap_pred, k=k)
+#         batch_scores, batch_index, batch_topk_labels = batch_dets
 
-        wh = transpose_and_gather_feat(wh_pred, batch_index)
-        offset = transpose_and_gather_feat(offset_pred, batch_index)
-        yaw_class = transpose_and_gather_feat(yaw_class_pred, batch_index)
-        yaw_res = transpose_and_gather_feat(yaw_res_pred, batch_index)
-        velocity = transpose_and_gather_feat(velocity_pred, batch_index)
-        brake = transpose_and_gather_feat(brake_pred, batch_index)
-        brake = torch.argmax(brake, -1)
-        velocity = velocity[..., 0]
+#         wh = transpose_and_gather_feat(wh_pred, batch_index)
+#         offset = transpose_and_gather_feat(offset_pred, batch_index)
+#         yaw_class = transpose_and_gather_feat(yaw_class_pred, batch_index)
+#         yaw_res = transpose_and_gather_feat(yaw_res_pred, batch_index)
+#         velocity = transpose_and_gather_feat(velocity_pred, batch_index)
+#         brake = transpose_and_gather_feat(brake_pred, batch_index)
+#         brake = torch.argmax(brake, -1)
+#         velocity = velocity[..., 0]
 
-        # convert class + res to yaw
-        yaw_class = torch.argmax(yaw_class, -1)
-        yaw = self.class2angle(yaw_class, yaw_res.squeeze(2))
-        # speed
+#         # convert class + res to yaw
+#         yaw_class = torch.argmax(yaw_class, -1)
+#         yaw = self.class2angle(yaw_class, yaw_res.squeeze(2))
+#         # speed
         
-        topk_xs = topk_xs + offset[..., 0]
-        topk_ys = topk_ys + offset[..., 1]
+#         topk_xs = topk_xs + offset[..., 0]
+#         topk_ys = topk_ys + offset[..., 1]
 
-        ratio = 4.
+#         ratio = 4.
 
-        batch_bboxes = torch.stack([topk_xs, topk_ys, wh[..., 0], wh[..., 1], yaw, velocity, brake], dim=2)
-        batch_bboxes = torch.cat((batch_bboxes, batch_scores[..., None]),
-                                 dim=-1)
-        batch_bboxes[:, :, :4] *= ratio
+#         batch_bboxes = torch.stack([topk_xs, topk_ys, wh[..., 0], wh[..., 1], yaw, velocity, brake], dim=2)
+#         batch_bboxes = torch.cat((batch_bboxes, batch_scores[..., None]),
+#                                  dim=-1)
+#         batch_bboxes[:, :, :4] *= ratio
 
-        return batch_bboxes, batch_topk_labels
+#         return batch_bboxes, batch_topk_labels
 
-    def _bboxes_nms(self, bboxes, labels, cfg):
-        if labels.numel() == 0:
-            return bboxes, labels
+#     def _bboxes_nms(self, bboxes, labels, cfg):
+#         if labels.numel() == 0:
+#             return bboxes, labels
 
-        # torchvision's batched_nms only returns the kept indices (mmcv's version also
-        # returned pre-sorted/concatenated dets) - iou_threshold replaces mmcv's nms_cfg dict.
-        nms_cfg = cfg.nms_cfg
-        iou_threshold = nms_cfg['iou_threshold'] if isinstance(nms_cfg, dict) else nms_cfg
-        keep = batched_nms(bboxes[:, :4].contiguous(),
-                            bboxes[:, -1].contiguous(), labels,
-                            iou_threshold)
-        out_bboxes = bboxes[keep]
-        out_labels = labels[keep]
+#         # torchvision's batched_nms only returns the kept indices (mmcv's version also
+#         # returned pre-sorted/concatenated dets) - iou_threshold replaces mmcv's nms_cfg dict.
+#         nms_cfg = cfg.nms_cfg
+#         iou_threshold = nms_cfg['iou_threshold'] if isinstance(nms_cfg, dict) else nms_cfg
+#         keep = batched_nms(bboxes[:, :4].contiguous(),
+#                             bboxes[:, -1].contiguous(), labels,
+#                             iou_threshold)
+#         out_bboxes = bboxes[keep]
+#         out_labels = labels[keep]
 
-        if len(out_bboxes) > 0:
-            idx = torch.argsort(out_bboxes[:, -1], descending=True)
-            idx = idx[:cfg.max_per_img]
-            out_bboxes = out_bboxes[idx]
-            out_labels = out_labels[idx]
+#         if len(out_bboxes) > 0:
+#             idx = torch.argsort(out_bboxes[:, -1], descending=True)
+#             idx = idx[:cfg.max_per_img]
+#             out_bboxes = out_bboxes[idx]
+#             out_labels = out_labels[idx]
 
-        return out_bboxes, out_labels
+#         return out_bboxes, out_labels
 
 
 class PIDController(object):
@@ -881,17 +881,6 @@ class LidarCenterNet(nn.Module):
 
         pred_wp, _, _, _, _ = self.forward_gru(fused_features, target_point)
 
-        # preds = self.head([features[0]])
-        # results = self.head.get_bboxes(preds[0], preds[1], preds[2], preds[3], preds[4], preds[5], preds[6])
-        # bboxes, _ = results[0]
-
-        # # filter bbox based on the confidence of the prediction
-        # bboxes = bboxes[bboxes[:, -1] > self.config.bb_confidence_threshold]
-        # rotated_bboxes = []
-        # for bbox in bboxes.detach().cpu().numpy():
-        #     bbox = self.get_bbox_local_metric(bbox)
-        #     rotated_bboxes.append(bbox)
-
         self.i += 1
         
         if debug and self.i % 2 != 0 and not (save_path is None):
@@ -937,9 +926,10 @@ class LidarCenterNet(nn.Module):
         pred_bev = self.pred_bev(features[0])
         pred_bev = F.interpolate(pred_bev, (self.config.bev_resolution_height, self.config.bev_resolution_width), mode='bilinear', align_corners=True)
 
-        weight = torch.from_numpy(np.array([1., 4.0])).to(dtype=torch.float32, device=pred_bev.device)
+        # free:occupied pixel ratio measured across all 17 routes in data/ is ~4.16:1, not 11:1
+        weight = torch.from_numpy(np.array([4.16, 1.])).to(dtype=torch.float32, device=pred_bev.device)
 
-        
+
         loss_bev = F.cross_entropy(pred_bev, bev, weight=weight).mean()
 
         loss_wp = torch.mean(torch.abs(pred_wp - ego_waypoint))
@@ -948,19 +938,14 @@ class LidarCenterNet(nn.Module):
             "loss_bev": loss_bev
         })
 
-        # preds = self.head([features[0]])
-
-        # gt_labels = torch.zeros_like(label[:, :, 0])
-        # gt_bboxes_ignore = label.sum(dim=-1) == 0.
-        # loss_bbox = self.head.loss(preds[0], preds[1], preds[2], preds[3], preds[4], preds[5], preds[6],
-        #                         [label], gt_labels=[gt_labels], gt_bboxes_ignore=[gt_bboxes_ignore], img_metas=None)
-        
-        # loss.update(loss_bbox)
-
         if self.config.multitask:
             pred_semantic = self.seg_decoder(image_features_grid)
             pred_depth = self.depth_decoder(image_features_grid)
-            loss_semantic = self.config.ls_seg * F.cross_entropy(pred_semantic, semantic).mean()
+            # non-floor:floor pixel ratio measured across all 16 routes in data/ is ~5.4:1 - floor (class 1) is
+            # the minority class here (front camera mostly shows walls/ceiling), opposite of the BEV imbalance
+            semantic_weight = torch.from_numpy(np.array([1., 5.41])).to(dtype=torch.float32, device=pred_semantic.device)
+            # loss_semantic = self.config.ls_seg * F.cross_entropy(pred_semantic, semantic).mean() # unweighted, ignored the class imbalance
+            loss_semantic = self.config.ls_seg * F.cross_entropy(pred_semantic, semantic, weight=semantic_weight).mean()
 
             loss_depth = self.config.ls_depth * F.l1_loss(pred_depth, depth).mean()
             loss.update({
@@ -976,88 +961,11 @@ class LidarCenterNet(nn.Module):
         self.i += 1
         if ((self.config.debug == True) and (self.i % self.config.train_debug_save_freq == 0) and (save_path != None)):
             with torch.no_grad():
-                # results = self.head.get_bboxes(preds[0], preds[1], preds[2], preds[3], preds[4], preds[5], preds[6])
-                # bboxes, _ = results[0]
-                # bboxes = bboxes[bboxes[:, -1] > self.config.bb_confidence_threshold]
                 self.visualize_model_io(save_path, self.i, self.config, rgb, lidar_bev, target_point,
                                    pred_wp, pred_bev, pred_semantic, pred_depth, self.device,
                                    gt_bboxes=label, expert_waypoints=ego_waypoint, stuck_detector=0, forced_move=False)
 
         return loss
-
-
-    # Converts the coordinate system to x front y right, vehicle center at the origin.
-    # Units are converted from pixels to meters
-    def get_bbox_local_metric(self, bbox):
-        x, y, w, h, yaw, speed, brake, confidence = bbox
-
-        w = w / self.config.bounding_box_divisor / self.config.pixels_per_meter # We multiplied by 2 when collecting the data, and multiplied by 8 when loading the labels.
-        h = h / self.config.bounding_box_divisor / self.config.pixels_per_meter # We multiplied by 2 when collecting the data, and multiplied by 8 when loading the labels.
-
-        T = get_lidar_to_bevimage_transform()
-        
-        T_inv = np.linalg.inv(T)
-
-        center = np.array([x,y,1.0])
-
-        center_old_coordinate_sys = T_inv @ center
-
-        center_old_coordinate_sys = center_old_coordinate_sys + np.array(self.config.lidar_pos)
-
-        #Convert to standard CARLA right hand coordinate system
-        center_old_coordinate_sys[1] =  -center_old_coordinate_sys[1]
-
-        bbox = np.array([[-h, -w, 1],
-                         [-h,  w, 1],
-                         [ h,  w, 1],
-                         [ h, -w, 1],
-                         [ 0,  0, 1],
-                         [ 0, h * speed * 0.5, 1]])
-
-        R = np.array([[np.cos(yaw), -np.sin(yaw), 0],
-                      [np.sin(yaw),  np.cos(yaw), 0],
-                      [0,                      0, 1]])
-
-        for point_index in range(bbox.shape[0]):
-            bbox[point_index] = R @ bbox[point_index]
-            bbox[point_index] = bbox[point_index] + np.array([center_old_coordinate_sys[0], center_old_coordinate_sys[1],0])
-
-        return bbox, brake, confidence
-
-    # this is different
-    def get_rotated_bbox(self, bbox):
-        x, y, w, h, yaw, speed, brake =  bbox
-
-        bbox = np.array([[h,   w, 1],
-                         [h,  -w, 1],
-                         [-h, -w, 1],
-                         [-h,  w, 1],
-                         [0, 0, 1],
-                         [-h * speed * 0.5, 0, 1]])
-        bbox[:, :2] /= self.config.bounding_box_divisor
-        bbox[:, :2] = bbox[:, [1, 0]]
-
-        c, s = np.cos(yaw), np.sin(yaw)
-        # use y x because coordinate is changed
-        r1_to_world = np.array([[c, -s, x], [s, c, y], [0, 0, 1]])
-
-        bbox = r1_to_world @ bbox.T
-        bbox = bbox.T
-
-        return bbox, brake
-
-    def draw_bboxes(self, bboxes, image, color=(255, 255, 255), brake_color=(0, 0, 255)):
-        idx = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5]]
-        for bbox, brake in bboxes:
-            bbox = bbox.astype(np.int32)[:, :2]
-            for s, e in idx:
-                if brake >= self.config.draw_brake_threshhold:
-                    color = brake_color
-                else:
-                    color = color
-                # brake is true while still have high velocity
-                cv2.line(image, tuple(bbox[s]), tuple(bbox[e]), color=color, thickness=1)
-        return image
 
 
     def draw_waypoints(self, label, waypoints, image, color = (255, 255, 255)):
@@ -1175,9 +1083,6 @@ class LidarCenterNet(nn.Module):
         # stuck text
         lidar_panel = Image.fromarray(lidar_panel)
         draw = ImageDraw.Draw(lidar_panel)
-        # draw.text((10, 0), "stuck detector:   %04d" % (stuck_detector), font=font)
-        # draw.text((10, 30), "forced move:      %s" % (" True" if forced_move else "False"), font=font,
-        #           fill=(255, 0, 0, 255) if forced_move else (255, 255, 255, 255))
         lidar_panel = np.array(lidar_panel)
         cv2.imwrite(str(save_path + ("/%d_lidar_bev_detections_waypoints.png" % frame_id)), lidar_panel)
 
