@@ -1,6 +1,5 @@
 """
-Test results of a trained TransFuser model on a single scenario/route, producing debug images and a plot of the predicted vs ground-truth trajectory. This is a smoke test to
-verify
+Evaluate the model and document the results.
 """
 import argparse
 import json
@@ -22,14 +21,8 @@ from torch.utils.data import DataLoader
 from config import GlobalConfig
 from data import IsaacSimData, draw_target_point
 from model import LidarCenterNet
+import utils.metrics as metrics
 
-# config attributes that model_ckpt/*/args.txt may specify and that affect the model's
-# architecture (layer counts, extra input channels, etc.) - anything present in args.txt
-# overrides the config default so the constructed model's shapes match the checkpoint.
-_CONFIG_OVERRIDE_KEYS = [
-    'n_layer', 'use_target_point_image', 'use_ground_plane', 'use_point_pillars',
-    'img_vert_anchors', 'img_horz_anchors', 'lidar_vert_anchors', 'lidar_horz_anchors',
-]
 
 
 def parse_args():
@@ -38,9 +31,6 @@ def parse_args():
                          default=os.path.join(SCRIPT_DIR, '..', '..', 'data'),
                          help='Root dir containing <scenario>/<route> folders '
                               '(default: container_files/transfuser/data)')
-    parser.add_argument('--backbone', type=str, default=None,
-                         help='Override config.backbone. Ignored if --checkpoint has an '
-                              'args.txt, since its backbone is what the weights match.')
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--viz_dir', type=str, default='/workspace/viz',
                          help='Hardcoded debug-image output dir used by '
@@ -50,8 +40,6 @@ def parse_args():
                          help='Path to a trained .pth file, or a directory containing one '
                               'plus args.txt (e.g. model_ckpt/models_2022/<backbone>). '
                               'Pass "" to use random-initialized weights instead.')
-    parser.add_argument('--eval_scenario', type=str, default='scenario_1', help="The scenario you would like to evaluate")
-    parser.add_argument('--eval_route', type=str, default='1', help="The scenario you would like to evaluate")
     return parser.parse_args()
 
 
@@ -109,23 +97,6 @@ def plot_trajectory_comparison(pred_points, gt_points, viz_dir):
     plt.close(fig)
     return plot_path
 
-def parse_distance(command):
-    """Return the number in a command like "Drive 10 metres along the corridor"."""
-    match = re.search(r'-?\d+(?:\.\d+)?', command)
-    if match is None:
-        raise ValueError(f"No number found in command: {command!r}")
-    return float(match.group())
-
-
-def calculate_target_point(command):
-    """Drive 10 metres along the corridor
-
-    Returns the single (x, y) goal the command asks for, in the frame anchored on the
-    first step (x forward, y left - same convention as data.py's ego_waypoint). main()
-    converts it into each step's own ego frame before handing it to the model."""
-    distance = parse_distance(command)
-    return np.array([distance, 0.0])
-
 
 def main():
     args = parse_args()
@@ -150,10 +121,6 @@ def main():
               f"backbone={checkpoint_backbone} - using the checkpoint's, since its "
               f"weights won't load into a different architecture.")
     config.backbone = checkpoint_backbone or args.backbone or config.backbone
-
-    for key in _CONFIG_OVERRIDE_KEYS:
-        if key in train_args:
-            setattr(config, key, train_args[key])
 
     if not config.eval_data:
         raise SystemExit(f"No <scenario>/<route> folders found under {args.data_root}")
