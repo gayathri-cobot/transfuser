@@ -165,8 +165,7 @@ class GlobalConfig:
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    # if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
-                    if ((town.find('scenario_1_gray') != -1)):
+                    if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         self.train_data.append(os.path.join(self.root_dir, town, file))
@@ -176,28 +175,35 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    # if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
-                    if ((town.find('scenario_1_gray') == -1)):
+                    if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         self.val_data.append(os.path.join(self.root_dir, town, file))
         elif (setting == 'eval'): #No training data needed during evaluation.
             self.eval_towns = os.listdir(self.root_dir)
             self.eval_data = []
-            for town in self.eval_towns:
-                root_files = os.listdir(os.path.join(self.root_dir, town))
-                for file in root_files:
-                    if (town.find(self.eval_scenario) == -1):
-                        continue
-                    if not os.path.isfile(os.path.join(self.root_dir, town, file)):
-                        print(file)
-                        if (self.eval_route is not None):
-                            if (file.find(self.eval_route) == -1):
-                                continue
+            if (self.eval_scenario == 'all'):
+                for town in self.eval_towns:
+                    root_files = os.listdir(os.path.join(self.root_dir, town))
+                    for file in root_files:
+                        if not os.path.isfile(os.path.join(self.root_dir, town, file)):
+                            print(file)
+                            self.eval_data.append(os.path.join(self.root_dir, town, file))
+            else:
+                for town in self.eval_towns:
+                    root_files = os.listdir(os.path.join(self.root_dir, town))
+                    for file in root_files:
+                        if (town.find(self.eval_scenario) == -1):
+                            continue
+                        if not os.path.isfile(os.path.join(self.root_dir, town, file)):
+                            print(file)
+                            if (self.eval_route is not None):
+                                if (file.find(self.eval_route) == -1):
+                                    continue
+                                else:
+                                    self.eval_data.append(os.path.join(self.root_dir, town, file))
                             else:
                                 self.eval_data.append(os.path.join(self.root_dir, town, file))
-                        else:
-                            self.eval_data.append(os.path.join(self.root_dir, town, file))
         else:
             print("Error: Selected setting: ", setting, " does not exist.")
 

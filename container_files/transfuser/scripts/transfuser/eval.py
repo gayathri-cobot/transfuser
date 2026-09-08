@@ -21,7 +21,6 @@ from torch.utils.data import DataLoader
 from config import GlobalConfig
 from data import IsaacSimData, draw_target_point
 from model import LidarCenterNet
-import utils.metrics as metrics
 
 
 
@@ -40,6 +39,8 @@ def parse_args():
                          help='Path to a trained .pth file, or a directory containing one '
                               'plus args.txt (e.g. model_ckpt/models_2022/<backbone>). '
                               'Pass "" to use random-initialized weights instead.')
+    parser.add_argument('--eval_scenario', type=str, default='scenario_1', help="The scenario you would like to evaluate")
+    parser.add_argument('--eval_route', type=str, default='1', help="The scenario you would like to evaluate")
     return parser.parse_args()
 
 
@@ -116,11 +117,10 @@ def main():
     config = GlobalConfig(root_dir=args.data_root, setting='eval', eval_scenario=args.eval_scenario, eval_route=args.eval_route)
 
     checkpoint_backbone = train_args.get('backbone')
-    if checkpoint_backbone and args.backbone and checkpoint_backbone != args.backbone:
-        print(f"[WARNING] --backbone={args.backbone} conflicts with the checkpoint's "
-              f"backbone={checkpoint_backbone} - using the checkpoint's, since its "
-              f"weights won't load into a different architecture.")
-    config.backbone = checkpoint_backbone or args.backbone or config.backbone
+    config.backbone = checkpoint_backbone
+    config.use_target_point_image = bool(train_args.get('use_target_point_image', 1))
+    config.n_layer = train_args.get('n_layer', config.n_layer)
+    config.use_point_pillars = bool(train_args.get('use_point_pillars', 0))
 
     if not config.eval_data:
         raise SystemExit(f"No <scenario>/<route> folders found under {args.data_root}")
@@ -141,16 +141,15 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    model = LidarCenterNet(config, device, config.backbone,
-                            image_architecture=train_args.get('image_architecture', 'resnet34'),
-                            lidar_architecture=train_args.get('lidar_architecture', 'resnet18'),
+    print(train_args.get('image_architecture', 'regnety_032'))
+
+    model = LidarCenterNet(config, device,
+                            image_architecture=train_args.get('image_architecture', 'regnety_032'),
+                            lidar_architecture=train_args.get('lidar_architecture', 'regnety_032'),
                             use_velocity=bool(train_args.get('use_velocity', 0))).to(device)
 
     if weights_path:
         state_dict = torch.load(weights_path, map_location=device)
-        # train.py saves the DistributedDataParallel wrapper's state_dict, so every key
-        # is prefixed with 'module.'. Strip it, otherwise strict=False silently loads
-        # nothing and we evaluate a random-initialized model.
         if all(k.startswith('module.') for k in state_dict):
             state_dict = {k[len('module.'):]: v for k, v in state_dict.items()}
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
@@ -164,20 +163,15 @@ def main():
 
     print(f"Running the full trajectory: {len(dataset)} steps")
 
-    command = "Drive 10 metres along the corridor"
-    goal_anchored = calculate_target_point(command)
-    print(f"command={command!r} -> goal {goal_anchored} in the first step's frame")
-
-    # The dataset only gives us each step's ego-local waypoints and its absolute yaw
-    # ('theta'), no absolute position. So we anchor a frame on the first step and chain
-    # steps together using each step's yaw (relative to the first step's) plus the
-    # previous step's first ground-truth waypoint as the displacement to the next step.
+    #Anchor the frame on the first step, use only odom frame
     theta0 = prev_theta = None
     prev_gt_local = None
     prev_pred_local = None
     anchor_pos = np.zeros(2)
+    gt_anchor_pos = np.zeros(2) # undrifted twin of anchor_pos, chained from logged waypoints only - the goal doesn't drift with the model's predictions
     pred_points_anchored = []
     gt_points_anchored = []
+    eval_metrics = {'bev_iou': [], 'seg_iou': [], 'depth_rmse': [], 'similarity': []}
 
     for step, batch in enumerate(loader):
         if step == 0:
@@ -190,25 +184,20 @@ def main():
         lidar_bev = batch['lidar'].to(device, dtype=torch.float32)
         ego_vel = batch['velocity'].to(device, dtype=torch.float32).reshape(-1, 1)
 
-        # target_point = batch['target_point'].to(device, dtype=torch.float32)
-        # target_point_image = batch['target_point_image'].to(device, dtype=torch.float32)
-        # target_point, target_point_image, ego_vel = fill_missing_model_inputs(batch, config, device)
         gt_waypoints = batch['ego_waypoint'].to(device, dtype=torch.float32)
 
-        # Anchor bookkeeping has to happen before the forward pass now: the command's
-        # goal lives in the first step's frame, and the model wants it in this step's
-        # ego frame, so we need this step's pose in the anchor frame first.
         theta = float(batch['theta'][0])
         if theta0 is None:
             theta0 = theta
         else:
-            # Advance the anchor position by the previous step's actual displacement
-            # to this step (its first ground-truth waypoint), rotated into the anchor frame.
             anchor_pos = anchor_pos + rotation_matrix(prev_theta - theta0) @ prev_pred_local[0]
+            gt_anchor_pos = gt_anchor_pos + rotation_matrix(prev_theta - theta0) @ prev_gt_local[0]
         R = rotation_matrix(theta - theta0)
 
-        # Anchor-frame goal -> this step's ego frame, mirroring what data.py did with
-        # local_command_point (data.py:354-359).
+        # Move to anchor frame
+        goal_anchored = gt_anchor_pos + R @ batch['target_point'][0].cpu().numpy()
+
+        # Anchor-frame goal 
         goal_local = R.T @ (goal_anchored - anchor_pos)
         batch_size = rgb.shape[0]
         target_point = torch.from_numpy(goal_local).to(device, dtype=torch.float32) \
@@ -217,43 +206,20 @@ def main():
                                   .to(device, dtype=torch.float32) \
                                   .unsqueeze(0).repeat(batch_size, 1, 1, 1)
 
-        bev_points = cam_points = None
-        if config.backbone == 'geometric_fusion':
-            bev_points = batch['bev_points'].to(device, dtype=torch.int64)
-            cam_points = batch['cam_points'].to(device, dtype=torch.int64)
+        bev_gt = batch['bev'].to(device, dtype=torch.long)
+        depth_gt = batch['depth'].to(device, dtype=torch.float32)
+        semantic_gt = batch['semantic'].squeeze(1).to(device, dtype=torch.long)
 
         with torch.no_grad():
-            pred_wp = model.forward_ego(rgb, lidar_bev, target_point, target_point_image,
-                                                 ego_vel=ego_vel, expert_waypoints=gt_waypoints, save_path=args.viz_dir)
+            pred_wp, step_metrics = model.forward_ego(rgb, lidar_bev, target_point, target_point_image,
+                                                 ego_vel=ego_vel, expert_waypoints=gt_waypoints, save_path=args.viz_dir,
+                                                 eval=True, bev_gt=bev_gt, depth=depth_gt, semantic=semantic_gt)
+        for key in eval_metrics:
+            eval_metrics[key].append(step_metrics[f'{key}_mean'])
 
-        # print(f"step {step}/{len(loader)}: pred_wp shape={tuple(pred_wp.shape)}, "
-        #       f"target point (ego frame)={goal_local}, "
-        #       f"gt last wp={gt_waypoints[0, -1].cpu().numpy()}, "
-        #       f"pred last wp={pred_wp[0, -1].cpu().numpy()}")
-
-        # theta / anchor_pos / R moved above the forward pass - the target point needs
-        # them now. Left here commented so the original ordering is still visible.
-        # theta = float(batch['theta'][0])
-        
         gt_local = gt_waypoints[:,0,:].cpu().numpy()
         pred_local = pred_wp[:,0,:].cpu().numpy()
 
-        # print(gt_local.shape, pred_local.shape)
-
-        # if theta0 is None:
-        #     theta0 = theta
-        # else:
-        #     # Advance the anchor position by the previous step's actual displacement
-        #     # to this step (its first ground-truth waypoint), rotated into the anchor frame.
-        #     anchor_pos = anchor_pos + rotation_matrix(prev_theta - theta0) @ prev_gt_local[0]
-
-        # R = rotation_matrix(theta - theta0)
-        # anchor_pos is (2,) and R @ *_local.T is (2, B): numpy broadcast those as
-        # (1,2) vs (2,1) and produced a (2,2) outer sum, so every step appended two
-        # garbage rows (41 steps -> 82 points). Add the offset down the coordinate
-        # axis instead, then transpose back to one (x, y) row per sample.
-        # gt_points_anchored.extend(anchor_pos + R @ gt_local.T)
-        # pred_points_anchored.extend(anchor_pos + R @ pred_local.T)
         gt_points_anchored.extend((anchor_pos[:, None] + R @ gt_local.T).T)
         pred_points_anchored.extend((anchor_pos[:, None] + R @ pred_local.T).T)
 
@@ -261,10 +227,14 @@ def main():
         prev_gt_local = gt_local
         prev_pred_local = pred_local
 
-    print(len(pred_points_anchored), len(gt_points_anchored))
     plot_path = plot_trajectory_comparison(pred_points_anchored, gt_points_anchored, args.viz_dir)
+    eval_metrics_summary = {}
+    for k, v in eval_metrics.items():
+        eval_metrics_summary[f'{k}_mean'] = float(np.mean(v))
+        eval_metrics_summary[f'{k}_std'] = float(np.std(v))
+    print(f"Evaluation metrics summary: {eval_metrics_summary}")
 
-    print(f"Smoke test passed: ran the full trajectory ({len(dataset)} steps) through "
+    print(f"Evaluated the full trajectory ({len(dataset)} steps) through "
           f"dataloader -> model forward pass. Debug images written to {args.viz_dir}")
     print(f"Predicted-vs-ground-truth trajectory plot saved to {plot_path}")
 

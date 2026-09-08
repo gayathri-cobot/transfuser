@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_14 — minimal two-point drives past the cart, on scenario_1's
+  north-south lane (x=46.0) in the EBC area of patrick_henry_whole.
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  TWO POINTS ONLY: spawn, then one goal. No intermediate waypoints, so the whole
+  path between them is the planner's to choose — which is the point. Anything the
+  robot does around the cart is nav2's decision, not authored geometry.
+
+  HOW THE TWO NUMBERS WERE DERIVED
+
+  The brief was "0.5 m before the cart's start point" and "0.5 m after the cart's
+  end point". Those are measured to the CART'S FACES and account for proxie's own
+  length, not to the cart's origin — spawning on the origin-based number puts the
+  robot inside the cart. Measured extents:
+
+    proxie                     1.03 m long -> 0.52 m from centre to either face
+    cart at timeline t=0       y = 79.55..80.48   (where it sits when spawned)
+    cart parked (t >= 8 s)     y = 83.55..84.48   (where it ends up)
+
+    south point  79.55 - 0.5 - 0.52 = 78.53  ->  y = 78.5  (0.55 m clear)
+    north point  84.48 + 0.5 + 0.52 = 85.50  ->  y = 85.5  (0.50 m clear)
+
+  So each route is a 7.0 m drive with the cart's parked footprint sitting across
+  the last third of it. Note the spawn clearance is checked against the cart's
+  t=0 pose, not its parked pose: a run does Stop() -> Spawn -> Play(), and Stop()
+  rewinds the timeline, so at the moment the robot is spawned the cart is still at
+  its start. Both spawns are clear of both cart positions.
+
+  leg_by_leg is false — with one waypoint it makes no practical difference, but it
+  keeps the drive a single continuous NavigatePath.
+
+  WHAT THE ROBOT ACTUALLY MEETS: a PARKED cart, not a moving one. The cart's 8 s
+  trip starts at Play(), and Apollo bringup outlasts it, so by the time the robot
+  drives the cart has been sitting at y = 83.55..84.48 for a while. This is a
+  static-obstacle test until the cart's time samples get a START HOLD (see
+  the cart asset's header) or a proximity trigger.
+
+  PASSING ROOM, measured against the PH greybox: 9.15 m of clear floor west of
+  the cart (to Wall_31/Wall_467 at x=36.4) and 1.35 m east (to Wall_29 at
+  x=47.65). Cart inflation reaches only x=44.95, so a west pass is cost-free
+  while the east gap is fully inflated. Expect nav2 to swing west.
+-->
+<routes scenario="scenario_14">
+
+  <route id="1" leg_by_leg="false"
+         description="Northbound, two points: spawn 0.5 m south of the cart's start footprint and drive 7 m north to 0.5 m past its parked footprint. No intermediate waypoints - how it gets around the cart is entirely nav2's choice.">
+    <start x="46.0" y="78.5" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="85.5" yaw="90.0" description="past_cart" />
+  </route>
+
+  <route id="2" leg_by_leg="false"
+         description="Southbound, two points: the mirror of route 1. Spawn 0.5 m north of the cart's parked footprint and drive 7 m south to 0.5 m short of its start footprint, so the robot meets the parked cart head-on within the first couple of metres.">
+    <start x="46.0" y="90.5" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="80.5" yaw="270.0" description="past_cart" />
+  </route>
+
+  <route id="3" leg_by_leg="false"
+         description="Northbound, two points: spawn 0.5 m south of the cart's start footprint and drive 7 m north to 0.5 m past its parked footprint. No intermediate waypoints - how it gets around the cart is entirely nav2's choice.">
+    <start x="46.0" y="76.5" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="86.5" yaw="90.0" description="past_cart" />
+  </route>
+
+  <route id="4" leg_by_leg="false"
+         description="Southbound, two points: the mirror of route 1. Spawn 0.5 m north of the cart's parked footprint and drive 7 m south to 0.5 m short of its start footprint, so the robot meets the parked cart head-on within the first couple of metres.">
+    <start x="46.0" y="90.5" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="80.0" yaw="270.0" description="past_cart" />
+  </route>
+
+  <route id="5" leg_by_leg="false"
+         description="Northbound, two points: spawn 0.5 m south of the cart's start footprint and drive 7 m north to 0.5 m past its parked footprint. No intermediate waypoints - how it gets around the cart is entirely nav2's choice.">
+    <start x="46.0" y="78.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="86.5" yaw="90.0" description="past_cart" />
+  </route>
+
+</routes>

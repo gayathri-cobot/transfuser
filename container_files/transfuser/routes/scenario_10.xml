@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_10 (two stacked-box obstacles forming a gate in the EBC area
+  of patrick_henry_whole).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  Geometry note: scenario_10 puts two two-crate stacks at (42, 71) and (42, 74). The
+  widest config is config_1 (Box1), which spans 0.51 m in X and 1.02 m in Y, so the
+  stacks occupy x = 41.74..42.26 over y = 70.49..71.51 and y = 73.49..74.51.
+
+  ROUTES 1-3 DRIVE THE GATE DOWN y=72.5. Unlike scenario_9 (single stack, pass on one
+  side) the obstacle here is two-sided, and the only lane through it is the midline
+  between the stacks: 1.98 m wide in config_1, 2.55..2.65 m in configs 2-4. y=72.5
+  keeps 0.99 m between the path centreline and either crate surface in config_1
+  (>= 1.19 m in the other configs, minimum taken over every leg including the diagonal
+  lane shift) - beyond the local costmap's inflation_radius (0.75), so the inflated
+  cost on the lane is zero. Sliding the lane off 72.5 by more than ~0.2 m pushes the
+  near side under 0.75 m and starts accruing cost against lethal_cost_threshold (30) /
+  cost_scaling_factor 5.0; do not offset it to make a "wider" variant, there is no
+  wide side.
+
+  ROUTE 4 GOES AROUND THE PAIR INSTEAD, on the NORTH side at y=75.5 - 0.99 m clear of
+  the northern crate's far face (y = 74.51 in config_1) and the same clearance the gate
+  lane gets. North is the only way round: south of the pair there is only 1.11 m
+  between Wall_122 / Wall_252 (top edge y = 69.38) and the southern crate's face
+  (y = 70.49), which would leave a centreline 0.56 m from obstacles on both sides -
+  cost ~50, over the lethal threshold. Route 4 shifts north while still EAST of x=42.5,
+  holds y=75.5 all the way to x=40 and only then descends, so the descent runs 1.74 m
+  (config_1) clear of the crates' west faces. Do not cut that corner by dropping south
+  from x=41 - the diagonal then passes the west faces at 0.94 m in config_1 and 0.82 m
+  in config_4, closer than anything else in this scenario.
+
+  As in scenario_9, the lateral offset has to be established WEST of x=41.5 and held
+  until past x=42.5. That is what the x=41 lane_shift waypoint is for: without it a
+  leg running from the west side straight to x=44 crosses x=42 at y ~ 71 and drives
+  through the southern stack. Do not drop that waypoint or slide it east.
+
+  The bay is open over x = 36.4..47.6, y = 69.4..78, bounded south by Wall_122 /
+  Wall_252 (y ~ 69.2..69.4), west by Wall_283 / Wall_337 / Wall_381 / Wall_130
+  (x ~ 35.3..36.4) and east by Wall_89 (x = 47.58), so the x = 38..46 span used here
+  clears the walls by >= 1.40 m (tightest: route 3's x=38..40 run-up passing the tip
+  of Wall_63 at y = 69.60).
+
+  Routes 1, 2 and 3 all drive the same y=72.5 gate lane; 3 differs from 1 only by a
+  longer run-up on y=71, which gives a longer sensor sequence of the stacks
+  approaching head-on before the lane shift. Route 4 is the bypass counterpart to
+  route 3: same westbound direction and same y=71 run-out, but around the north end of
+  the pair rather than through it, so the two can be compared directly.
+-->
+<routes scenario="scenario_10">
+
+  <route id="1" leg_by_leg="true"
+         description="Eastbound gate run: start on y=71 west of the southern stack, step north into the y=72.5 gate lane before reaching it, then run east between the two stacks at (42, 71) and (42, 74). Each waypoint is driven as its own leg (pause between legs).">
+    <start x="40.0" y="71.0" z="0.0" yaw="0.0" />
+    <waypoint x="41.0" y="72.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="44.0" y="72.5" yaw="0.0" description="gate_pass" />
+    <waypoint x="46.0" y="71.0" yaw="0.0" description="depart" />
+
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Westbound gate run: reverse of route 1, run west along the y=72.5 gate lane between the two stacks, then step south back onto y=71. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="72.5" yaw="180.0" description="gate_pass" />
+    <waypoint x="41.0" y="72.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="40.0" y="71.0" yaw="180.0" description="depart" />
+
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Eastbound gate run with a long run-up: start 4 m west at x=38 and drive up y=71 head-on towards the stacks before shifting into the y=72.5 gate lane, then run east through the gate. Same lane as route 1, longer approach. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="38.0" y="71.0" z="0.0" yaw="0.0" />
+    <waypoint x="40.0" y="71.0" yaw="0.0" description="approach" />
+    <waypoint x="41.0" y="72.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="44.0" y="72.5" yaw="0.0" description="gate_pass" />
+    <waypoint x="46.0" y="71.0" yaw="0.0" description="depart" />
+
+  </route>
+
+ <route id="4" leg_by_leg="true"
+         description="Westbound gate run: reverse of route 1, run west along the y=72.5 gate lane between the two stacks, then step south back onto y=71. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="73.0" yaw="180.0" description="gate_pass" />
+    <waypoint x="41.0" y="72.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="40.0" y="71.0" yaw="180.0" description="depart" />
+
+  </route>
+
+  <route id="5" leg_by_leg="true"
+         description="Westbound gate run: reverse of route 1, run west along the y=72.5 gate lane between the two stacks, then step south back onto y=71. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="72.5" yaw="180.0" description="gate_pass" />
+    <waypoint x="41.0" y="72.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="39.0" y="71.0" yaw="180.0" description="depart" />
+
+  </route>
+
+</routes>

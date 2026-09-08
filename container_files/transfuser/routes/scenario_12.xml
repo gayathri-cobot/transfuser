@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_12 (two in-line stacked-box obstacles in the EBC area of
+  patrick_henry_whole).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  Geometry note: scenario_12 puts two two-crate stacks IN LINE along the lane, at
+  (40, 96.5) and (44, 96.5) - unlike scenario_10, whose pair straddles the lane as a
+  gate. Crate footprints (all four styles are rotated 90 deg about Z in the asset, so
+  the long side runs along Y):
+
+    config_1 Box1  0.51 m in X, 1.02 m in Y   <- widest in Y (binds the lane offset)
+    config_2 Box2  0.77 m in X, 0.38 m in Y
+    config_3 Box3  0.80 m in X, 0.45 m in Y
+    config_4 Box4  0.90 m in X, 0.35 m in Y   <- widest in X (binds the lane shift)
+
+  So in config_1 the stacks occupy y = 95.99..97.01 over x = 39.74..40.26 and
+  x = 43.74..44.26; in config_4 they are narrower in Y (y = 96.33..96.67) but reach
+  further along X (x = 39.55..40.45 and x = 43.55..44.45).
+
+  PASS SOUTH ON y=95.0. That lane keeps 0.99 m between the path centreline and the
+  nearer crate face in config_1 (1.26..1.33 m in the other configs) - beyond the
+  local costmap's inflation_radius (0.75), so the inflated cost on the lane is zero.
+  Moving the lane north of ~95.2 pushes config_1 under 0.75 m and starts accruing
+  cost against lethal_cost_threshold (30) / cost_scaling_factor 5.0.
+
+  BOTH stacks sit in the y=96.5 lane, so the offset has to be established WEST of
+  x=39.5 (config_4's west face) and HELD until past x=44.5 (config_4's east face).
+  That is what the x=39 lane_shift and x=45 waypoints are for: a leg running from
+  x=38 on y=96.5 straight to x=41 crosses the first stack at 0.3 m in config_1, i.e.
+  drives through it. Do not drop those waypoints or slide them inward.
+
+  Routes 1 and 2 approach head-on down the crate lane (y=96.5), shift into y=95.0
+  before the first stack and hold it past the second, with a pause abeam the gap at
+  x=42. Routes 3 and 4 weave instead: same y=95.0 offsets past each stack, but they
+  climb back onto y=96.5 in the 3.1 m gap between the stacks (config_4; 3.5 m in
+  config_1) and drop out again before the next one, so the robot sees each stack
+  head-on from close range. The weave legs only ever turn EAST of x=41 and WEST of
+  x=43, which keeps them >= 1.17 m off the crates in every config; running the weave
+  straight from (42, 96.5) to (45, 95) instead crosses the second stack's west face
+  at 0.36 m in config_1.
+
+  Verified minimum centreline-to-crate clearance over every leg of every route:
+  0.99 m in config_1 (the lane legs), 1.19..1.24 m in configs 2-4.
+
+  The x = 38..46 span used here matches scenario_11, which drives the same bay.
+-->
+<routes scenario="scenario_12">
+
+  <route id="1" leg_by_leg="true"
+         description="Eastbound pass-by: start on the crate lane (y=96.5) west of both stacks, step south into the y=95.0 lane before reaching the first one, then run east past both stacks at (40, 96.5) and (44, 96.5) before closing back north. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="37.0" y="96.5" z="0.0" yaw="0.0" />
+    <waypoint x="39.0" y="95.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="42.0" y="95.5" yaw="0.0" description="pass_by_1" />
+    <waypoint x="45.0" y="95.5" yaw="0.0" description="pass_by_2" />
+    <waypoint x="46.0" y="96.0" yaw="0.0" description="depart" />
+
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Westbound pass-by: reverse of route 1, drop from the crate lane into y=95.0 east of both stacks, run west past (44, 96.5) and (40, 96.5), then step back out to the west. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="96.5" z="0.0" yaw="180.0" />
+    <waypoint x="45.0" y="95.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="42.0" y="95.5" yaw="180.0" description="pass_by_2" />
+    <waypoint x="40.0" y="95.5" yaw="180.0" description="pass_by_1" />
+    
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Eastbound weave: pass the first stack on the y=95.0 lane, climb back onto the crate lane (y=96.5) in the gap between the two stacks so the second one is seen head-on, then shift south again before reaching it and pass it on y=95.0. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="37.0" y="96.5" z="0.0" yaw="0.0" />
+    <waypoint x="39.0" y="95.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="41.0" y="95.5" yaw="0.0" description="pass_by_1" />
+    <waypoint x="42.0" y="95.5" yaw="0.0" description="weave_in" />
+    <waypoint x="43.0" y="95.5" yaw="0.0" description="weave_out" />
+    <waypoint x="45.0" y="95.5" yaw="0.0" description="pass_by_2" />
+
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Westbound weave: reverse of route 3, pass the second stack on y=95.0, rise onto the crate lane in the gap between the stacks, then drop back to y=95.0 before the first stack and run out west. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="96.5" z="0.0" yaw="180.0" />
+    <waypoint x="45.0" y="95.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="43.0" y="95.5" yaw="180.0" description="pass_by_2" />
+    <waypoint x="42.0" y="95.5" yaw="180.0" description="weave_in" />
+    <waypoint x="41.0" y="95.5" yaw="180.0" description="weave_out" />
+    <waypoint x="39.0" y="95.0" yaw="180.0" description="pass_by_1" />
+
+  </route>
+
+</routes>

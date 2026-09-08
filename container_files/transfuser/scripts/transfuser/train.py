@@ -55,9 +55,6 @@ def main():
     # parser.add_argument('--schedule_reduce_epoch_02', type=int, default=70,
     #                     help='Epoch at which to reduce the lr by a factor of 10 the second time. Only used with '
     #                     '--schedule 1')
-    parser.add_argument('--backbone', type=str, default='transFuser',
-                        help='Which Fusion backbone to use. Options: transFuser, late_fusion, latentTF, ' \
-                        'geometric_fusion')
     parser.add_argument('--image_architecture', type=str, default='regnety_032',
                         help='Which architecture to use for the image branch. efficientnet_b0, resnet34, ' \
                         'regnety_032 etc.')
@@ -86,9 +83,6 @@ def main():
     'independently, 1: Synchronize Batch norms accross GPUs. Only use with --parallel_training 1')
     parser.add_argument('--zero_redundancy_optimizer', type=int, default=0, help='0: Normal AdamW Optimizer, 1: ' \
     'Use Zero Reduncdancy Optimizer to reduce memory footprint. Only use with --parallel_training 1')
-    parser.add_argument('--use_disk_cache', type=int, default=0, help='0: Do not cache the dataset 1: ' \
-    'Cache the dataset on the disk pointed to by the SCRATCH enironment variable. Useful if the dataset is stored o' \
-    'n slow HDDs and can be temporarily stored on faster SSD storage.')
     parser.add_argument("--save_freq", type=int, default=20, help='The frequency at which the models are saved')
 
 
@@ -96,21 +90,8 @@ def main():
     args.logdir = os.path.join(args.logdir, args.id)
     parallel = bool(args.parallel_training)
 
-    if(bool(args.use_disk_cache) == True):
-        if (parallel == True):
-            # NOTE: This is specific to our cluster setup where the data is stored on slow storage.
-            # During training we cache the dataset on the fast storage of the local compute nodes.
-            # Adapt to your cluster setup as needed.
-            # Important initialize the parallel threads from torch run to the same folder (so they can share the cache).
-            tmp_folder = str(os.environ.get('SCRATCH'))
-            print("Tmp folder for dataset cache: ", tmp_folder)
-            tmp_folder = tmp_folder + "/dataset_cache"
-            # We use a local diskcache to cache the dataset on the faster SSD drives on our cluster.
-            shared_dict = Cache(directory=tmp_folder ,size_limit=int(768 * 1024 ** 3))
-        else:
-            shared_dict = Cache(size_limit=int(768 * 1024 ** 3))
-    else:
-        shared_dict = None
+    
+    shared_dict = None
 
     # Use torchrun for starting because it has proper error handling. Local rank will be set automatically
     if(parallel == True): #Non distributed works better with my local debugger
@@ -140,13 +121,12 @@ def main():
     config.use_target_point_image = bool(args.use_target_point_image)
     config.n_layer = args.n_layer
     config.use_point_pillars = bool(args.use_point_pillars)
-    config.backbone = args.backbone
     if(bool(args.no_bev_loss)):
         index_bev = config.detailed_losses.index("loss_bev")
         config.detailed_losses_weights[index_bev] = 0.0
 
     # Create model and optimizers
-    model = LidarCenterNet(config, device, args.backbone, args.image_architecture, args.lidar_architecture, bool(args.use_velocity))
+    model = LidarCenterNet(config, device, args.image_architecture, args.lidar_architecture, bool(args.use_velocity))
 
     if (parallel == True):
         # Synchronizing the Batch Norms increases the Batch size with which they are compute by *num_gpus
@@ -312,7 +292,6 @@ class Engine(object):
             lidar = data['lidar'].to(self.device, dtype=torch.float32)
             num_points = None
 
-        label = data['label'].to(self.device, dtype=torch.float32)
         ego_waypoint = data['ego_waypoint'].to(self.device, dtype=torch.float32)
 
         target_point = data['target_point'].to(self.device, dtype=torch.float32)
@@ -320,25 +299,13 @@ class Engine(object):
 
         ego_vel = data['velocity'].to(self.device, dtype=torch.float32)
 
-        if ((self.args.backbone == 'transFuser') or (self.args.backbone == 'late_fusion') or (self.args.backbone == 'latentTF')):
-            losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
+        
+        losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
                            target_point_image=target_point_image,
                            ego_vel=ego_vel.reshape(-1, 1), bev=bev,
-                           label=label, save_path=self.vis_save_path,
+                           save_path=self.vis_save_path,
                            depth=depth, semantic=semantic, num_points=num_points)
-        elif (self.args.backbone == 'geometric_fusion'):
-
-            bev_points = data['bev_points'].long().to('cuda', dtype=torch.int64)
-            cam_points = data['cam_points'].long().to('cuda', dtype=torch.int64)
-            losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
-                           target_point_image=target_point_image,
-                           ego_vel=ego_vel.reshape(-1, 1), bev=bev,
-                           label=label, save_path=self.vis_save_path,
-                           depth=depth, semantic=semantic, num_points=num_points,
-                           bev_points=bev_points, cam_points=cam_points)
-        else:
-            raise ("The chosen vision backbone does not exist. The options are: transFuser, late_fusion, geometric_fusion, latentTF")
-
+        
         return losses
 
 

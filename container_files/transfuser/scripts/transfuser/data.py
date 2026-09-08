@@ -317,8 +317,6 @@ class IsaacSimData(Dataset):
                               [-np.sin(rad), np.cos(rad)]])
         ego_waypoint = (degree_matrix @ ego_waypoint.T).T
 
-        # No source of per-actor bounding-box detections for this dataset.
-        label_pad = np.zeros((20, 7), dtype=np.float32)
 
         if(self.use_point_pillars == True):
             # We need to have a fixed number of LiDAR points for the batching to work, so we pad them and save to total amound of real LiDAR points.
@@ -333,17 +331,10 @@ class IsaacSimData(Dataset):
             data['cam_points'] = curr_cam_points
 
         data['lidar'] = lidar_bev
-        data['label'] = label_pad
         data['ego_waypoint'] = ego_waypoint
         data['theta'] = compute_yaw(measurements[self.seq_len-1])
         data['velocity'] = measurements[self.seq_len-1]["velocity"]["linear"]["x"]
         
-        # data['x_command'] = measurements[self.seq_len-1]['x_command']
-        # data['y_command'] = measurements[self.seq_len-1]['y_command']
-
-        # target points
-        # convert x_command, y_command to local coordinates
-        # taken from LBC code (uses 90+theta instead of theta)
         ego_theta = compute_yaw(measurements[self.seq_len-1]) + rad # + rad for augmentation
         ego_x = measurements[self.seq_len-1]["translation"]['x']
         ego_y = measurements[self.seq_len-1]["translation"]['y']
@@ -358,30 +349,10 @@ class IsaacSimData(Dataset):
         local_command_point = R.T.dot(local_command_point)
         # data['target_point'] = ego_waypoint[-1]
         data['target_point'] = local_command_point
-
-        # try:
-        #     x_command = measurements[self.seq_len-1]['x_command']
-        #     y_command = measurements[self.seq_len-1]['y_command']
-        #     R = np.array([
-        #         [np.cos(ego_theta), -np.sin(ego_theta)],
-        #         [np.sin(ego_theta),  np.cos(ego_theta)]
-        #         ])
-        #     local_command_point = np.array([x_command-ego_x, y_command-ego_y])
-        #     local_command_point = R.T.dot(local_command_point)
-        #     data['target_point'] = ego_waypoint[-1]
-        #     print(local_command_point, data['target_point'])
-        # except:
-        #     pass
-        # finally:
-        #     data['target_point'] = ego_waypoint[-1]
-            
-
-        # print(data['target_point'])
         
         data['target_point_image'] = draw_target_point(data['target_point'])
         return data
-
-    
+ 
 
 def get_depth(data):
     """Compute normalized depth from a (1, H, W) single-channel depth crop, in millimetres."""
@@ -644,18 +615,12 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
 
     # To be consistent with the network
     downscale_factor = 32
-    # Use the real captured image's resolution instead of a hardcoded size - data.py no
-    # longer crops rgb to a fixed config.img_resolution, so that size no longer matches.
     img_height, img_width = config.img_resolution
 
 
     left_camera_rotation = 90.0
     right_camera_rotation = -90.0
 
-    # calculating fov
-    # tan(θ/2) = (aperture/2) / focalLength
-    # θ/2 = atan(aperture / (2·focalLength))
-    # θ = 2·atan(aperture / (2·focalLength))
 
     vertical_aperture = 2.459
     horizontal_aperture = 3.86
@@ -667,10 +632,6 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
     fov_height = np.rad2deg(fov_height)
     fov_width = np.rad2deg(fov_width)
 
-    # LiDAR and camera are mounted at different positions on base_link (config.lidar_pos
-    # vs config.camera_pos, both x-forward/y-left/z-up, no rotation between them) - shift
-    # points from the LiDAR's frame into the camera's frame before projecting, or every
-    # point ends up offset by the difference between the two mounting positions.
     world[:, :3] = world[:, :3] + (np.array(lidar_pos) - np.array(camera_pos))
 
     # base_link/ROS convention has +y = left, but the pinhole model below needs
@@ -681,12 +642,6 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
     lidar = world[abs(world[:,1])<lidar_meters_y] # 32m to the sides
     lidar = lidar[lidar[:,0]<lidar_meters_x] # 64m to the front
     lidar = lidar[lidar[:,0]>0] # 0m to the back
-
-    # Translate Lidar cloud to the same coordinate system as the cameras (They only differ in height)
-    # lidar_z = lidar_pos[2]
-    # cam_z = lidar_pos[2]
-        
-    # lidar[..., 2] = lidar[..., 2] + (lidar_z - cam_z)
 
     # Make copies because we will rotate the new pointclouds
     lidar_for_left_camera  = deepcopy(lidar)
@@ -764,8 +719,6 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
         # Visualize LiDAR hits in image
         vis = np.zeros([img_height, 2 * img_width])
         vis_bev = np.zeros([lidar_height, lidar_width])
-        # image_vis is a single un-batched HWC front-camera image; only the "center"
-        # slot of the stitched canvas has a real image, left/right stay blank.
         vis_original_image = np.zeros([img_height, 2 * img_width, 3])
         center_x_offset = int(img_width / 2)
         image_vis_hwc = np.transpose(image_vis, (1, 2, 0))

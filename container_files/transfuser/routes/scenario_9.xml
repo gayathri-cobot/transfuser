@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_9 (stacked-box obstacle in the EBC area of patrick_henry_whole).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  Geometry note: scenario_9 puts a two-crate stack centred at (42, 75). The widest
+  config is config_1 (Box1), which spans 0.51 m in X and 1.02 m in Y, so it occupies
+  x = 41.74..42.26, y = 74.49..75.51.
+
+  The crate sits mid-lane, so the lateral offset has to be established WEST of
+  x=41.5 and held until past x=42.5. That is what the x=41 lane_shift waypoint is
+  for: without it a leg running from the west side straight to x=44 crosses x=42 at
+  y ~ 75 and drives through the crate. Do not drop that waypoint or slide it east.
+
+  The pass-by lanes sit at y=76.3 (routes 1/2) and y=77 (routes 3/4) to keep
+  >= 0.75 m between the path centreline and the crate surface, enough to stay under
+  the local costmap's lethal_cost_threshold (30) given inflation_radius 0.75 /
+  cost_scaling_factor 5.0. Moving these lanes south will make config_1 unplannable
+  before it becomes a physical collision.
+-->
+<routes scenario="scenario_9">
+
+  <route id="1" leg_by_leg="true"
+         description="Eastbound pass-by: start on y=75 west of the crate, step north into the y=76.3 lane before reaching it, then run east past the stack at (42, 75). Each waypoint is driven as its own leg (pause between legs).">
+    <start x="40.0" y="71.0" z="0.0" yaw="0.0" />
+    <waypoint x="41.0" y="72.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="44.0" y="72.5" yaw="0.0" description="pass_by" />
+    <waypoint x="46.0" y="71.0" yaw="0.0" description="depart" />
+
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Westbound pass-by: reverse of route 1, run west along the y=76.3 lane past the crate stack, then step south back onto y=75. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="72.5" yaw="180.0" description="pass_by" />
+    <waypoint x="41.0" y="72.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="40.0" y="71.0" yaw="180.0" description="depart" />
+    <waypoint x="38.0" y="71.0" yaw="180.0" description="depart" />
+
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Eastbound wide pass-by: start on y=74, swing north to the y=77 lane before reaching the crate, run east past it and close back to y=76. A wider berth than route 1. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="38.0" y="71.0" z="0.0" yaw="0.0" />
+    <waypoint x="40.0" y="71.0" yaw="0.0" description="drive" />
+    <waypoint x="41.0" y="72.5" yaw="0.0" description="lane_shift" />
+    <waypoint x="44.0" y="72.5" yaw="0.0" description="pass_by" />
+    <waypoint x="46.0" y="71.0" yaw="0.0" description="depart" />
+
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Westbound wide pass-by: reverse of route 3, run west along the y=77 lane past the crate stack, then drift south to y=74. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="46.0" y="71.0" z="0.0" yaw="180.0" />
+    <waypoint x="44.0" y="72.5" yaw="180.0" description="pass_by" />
+    <waypoint x="41.0" y="72.5" yaw="180.0" description="lane_shift" />
+    <waypoint x="40.0" y="71.0" yaw="180.0" description="depart" />
+
+  </route>
+
+</routes>

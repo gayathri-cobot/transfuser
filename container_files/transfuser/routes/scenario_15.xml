@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_15 — scenario_14's five routes, translated for a cart that
+  travels 6 m instead of 4 m. Lane is scenario_1's north-south lane (x=46.0) in
+  the EBC area of patrick_henry_whole.
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  TWO POINTS PER ROUTE: spawn, then one goal. No intermediate waypoints, so the
+  whole path between them is the planner's to choose — which is the point.
+  Anything the robot does around the cart is nav2's decision, not authored geometry.
+
+  HOW THESE MAP ONTO scenario_14's FIVE ROUTES
+
+  The 6 m trip parks the cart 2 m further north than scenario_14's 4 m trip, so
+  every NORTH-side endpoint moves +2.0 m and every SOUTH-side endpoint stays put.
+  That keeps each route's clearance to the cart identical to its scenario_14
+  counterpart, so the two scenarios are comparable route-by-route.
+
+    id   scenario_14        scenario_15        len 14 -> 15   character
+     1   78.5 -> 85.5       78.5 -> 87.5       7.0 -> 9.0     northbound, tight both ends
+     2   90.5 -> 80.5       92.5 -> 80.5      10.0 -> 12.0    southbound
+     3   76.5 -> 86.5       76.5 -> 88.5      10.0 -> 12.0    northbound, long run-up
+     4   90.5 -> 80.0       92.5 -> 80.0      10.5 -> 12.5    southbound, longer run-out
+     5   78.0 -> 86.5       78.0 -> 88.5       8.5 -> 10.5    northbound, mid
+
+  Reference extents used for the clearances:
+
+    proxie                     1.03 m long -> 0.52 m from centre to either face
+    cart at timeline t=0       y = 79.55..80.48   (where it sits when spawned)
+    cart parked (t >= 12 s)    y = 85.55..86.48   (6 m north; was 83.55..84.48
+                                                   in scenario_14's 4 m version)
+
+  Route 1 is the tight case, derived the same way as scenario_14's route 1:
+    south point  79.55 - 0.5 - 0.52 = 78.53  ->  y = 78.5
+    north point  86.48 + 0.5 + 0.52 = 87.50  ->  y = 87.5
+  The other four give the robot more room at one or both ends.
+
+  Spawn clearance is checked against the cart's t=0 pose, not its parked pose: a
+  run does Stop() -> Spawn -> Play(), and Stop() rewinds the timeline, so at the
+  moment the robot is spawned the cart is still at its start. All five spawns are
+  clear of BOTH cart positions.
+
+  leg_by_leg is false throughout — with one waypoint it makes no practical
+  difference, but it keeps each drive a single continuous NavigatePath.
+
+  THE PASSING GEOMETRY IS DIFFERENT FROM scenario_14, NOT JUST LONGER
+
+  6 m of travel carries the cart north of the Wall_29 pinch (x=47.65 over
+  y=80.02..85.20). Measured against the PH greybox:
+
+    scenario_14  cart parked y 83.55..84.48   east gap 1.35 m   west gap 9.30 m
+    scenario_15  cart parked y 85.55..86.48   east gap 4.35 m   west gap 9.37 m
+
+  scenario_14 effectively forces a west pass — its 1.35 m east gap is fully
+  inflated at inflation_radius=0.75 from both the cart and the wall. Here the
+  robot has 4.35 m to the east and a free choice of side. So if the two scenarios
+  behave differently, trip length is not the only candidate explanation.
+
+  The lane itself was checked clear over the whole span these routes use: no wall
+  geometry intersects x=45.5..46.5 anywhere over y=72..95.
+
+  WHAT THE ROBOT ACTUALLY MEETS: a PARKED cart, not a moving one. The cart's 12 s
+  trip starts at Play(), and Apollo bringup outlasts it, so by the time the robot
+  drives the cart has been sitting at y = 85.55..86.48 for a while. This is a
+  static-obstacle test until the cart's time samples get a START HOLD (see the
+  cart asset's header) or a proximity trigger.
+-->
+<routes scenario="scenario_15">
+
+  <route id="1" leg_by_leg="false"
+         description="Northbound, tight both ends: spawn 0.5 m south of the cart's start footprint and drive 9 m north to 0.5 m past its parked footprint at y=86. The minimum-clearance case - nav2 starts already on top of the obstacle with almost no run-up.">
+    <start x="46.0" y="78.5" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="87.5" yaw="90.0" description="past_cart" />
+  </route>
+
+  <route id="2" leg_by_leg="false"
+         description="Southbound: spawn 6 m north of the cart's parked footprint and drive 12 m south, finishing 2.5 m clear on the far side. The robot approaches the parked cart head-on with room to see it coming.">
+    <start x="46.0" y="96.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="87.5" yaw="270.0" description="past_cart" />
+  </route>
+
+  <route id="3" leg_by_leg="false"
+         description="Northbound with a long run-up: spawn 2 m further south than route 1 and finish 1 m further north, 12 m total, so the robot reaches the cart at a settled speed with a populated local costmap.">
+    <start x="46.0" y="76.5" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="88.5" yaw="90.0" description="past_cart" />
+  </route>
+
+  <route id="4" leg_by_leg="false"
+         description="Southbound with a longer run-out: as route 2 but finishing 0.5 m further south, 12.5 m total, giving more space to observe how the robot recovers the lane after passing.">
+    <start x="46.0" y="95.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.0" y="87.5" yaw="270.0" description="past_cart" />
+  </route>
+
+  <route id="5" leg_by_leg="false"
+         description="Northbound, mid: a half metre more run-up than route 1 and 1 m further past the cart, 10.5 m total. Sits between routes 1 and 3.">
+    <start x="46.0" y="78.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.0" y="88.5" yaw="90.0" description="past_cart" />
+  </route>
+
+</routes>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Routes for scenario_13 (stacked-box obstacle mid-lane on the scenario_1 north-south
+  lane in the EBC area of patrick_henry_whole).
+
+  A scenario JSON declares the scene/robot(asset)/assets/recording; the routes it can
+  be driven along live here, one <route> per drive. Each route has a unique id so a
+  scene script can pick which one to run (test_scene_1.py <scenario> <route_id>), and
+  its own <start> pose (where the robot spawns for that route).
+
+  Attributes:
+    <route id="..."      unique route id within this scenario (required)
+           leg_by_leg="true|false"  drive one NavigatePath per waypoint (pause
+                                     between legs) vs one continuous path. Default true.
+           description="..." >
+    <start x="" y="" z=""       robot spawn pose for this route, map frame (meters,
+           roll="" pitch="" yaw="" />  degrees). Required.
+    <waypoint x="" y="" yaw=""  map-frame target (meters, degrees). Omit x or y for a
+              roll="" pitch=""  rotation-only waypoint. yaw may be omitted (don't-care
+              description="" /> arrival heading).
+
+  Geometry: these are scenario_1's routes 1-4 - the same x=46 lane, driven north
+  (routes 1/3) and south (routes 2/4), spawning at y=74 (routes 1/2) and y=71
+  (routes 3/4) and running to y=91 - with a two-crate stack dropped at (46.5, 82),
+  i.e. in the middle of the lane and nudged 0.5 m east of its centreline. The
+  straight-through legs of scenario_1 would now drive into it, so every route detours
+  WEST around the stack and rejoins the lane afterwards.
+
+  Crate footprints (all four styles are rotated 90 deg about Z in the asset, so the
+  long side runs along Y):
+
+    config_1 Box1  0.51 m in X, 1.02 m in Y   <- longest in Y (binds where the shift
+                                                 must start and end)
+    config_2 Box2  0.77 m in X, 0.38 m in Y
+    config_3 Box3  0.80 m in X, 0.45 m in Y
+    config_4 Box4  0.90 m in X, 0.35 m in Y   <- widest in X (binds the lane offset)
+
+  So in config_1 the stack occupies x = 46.24..46.76 over y = 81.49..82.51; in
+  config_4 it is shorter in Y (y = 81.83..82.17) but reaches further in X
+  (x = 46.05..46.95).
+
+  PASS WEST, NOT EAST. Wall_29 runs at x = 47.65..47.88 for y = 80.03..85.20 (the
+  east side of this bay, continued north/south by Wall_89, Wall_408 and Wall_142),
+  leaving only 0.70 m between the crate's east face and the wall in config_4 - less
+  than the robot's footprint plus clearance, so there is no east lane at all. The
+  bay is open west to Wall_31 at x = 36.4, so all detours below go west of the
+  stack. That is what the crate's 0.5 m east offset buys: it widens the west detour
+  and shuts the east side entirely, so the pass side is unambiguous.
+
+  The stack sits mid-lane, so the lateral offset has to be established SOUTH of
+  y=81.5 (config_1's south face) and HELD until past y=82.5 (its north face). That
+  is what the y=80.5 lane_shift and the y=83.5/84.0 rejoin waypoints are for:
+  a leg running straight up x=46 from y=79.5 to y=85 drives through the crate. Do
+  not drop those waypoints or slide them toward y=82.
+
+  Routes 1/2 take the tight detour: route 1 on x=45.0, route 2 on x=44.5. That is
+  1.05 m and 1.55 m from the path centreline to the nearer crate face in config_4
+  (1.24 / 1.74 m in config_1), beyond the local costmap's inflation_radius (0.75),
+  so the inflated cost on either detour lane is zero. x=45.3 is the hard limit for
+  these lanes: east of that config_4 goes under 0.75 m and starts accruing cost
+  against lethal_cost_threshold (30) / cost_scaling_factor 5.0. Routes 3/4 take a
+  wider berth at x=43.5 (2.55 m in config_4) and, as in scenario_1's routes 3/4,
+  spawn/finish 3 m further south at y=71.
+
+  The lane legs on x=46 stop at y=79.0..79.5 south of the stack and resume at
+  y=85..86 north of it, so they never run alongside it; the closest a lane leg comes
+  to the crate is its endpoint, 2.0 m clear in config_1. Note the x=46 centreline is
+  now only 0.05 m west of config_4's west face, so those legs must not be extended
+  through y=82.
+
+  The detour lanes clear the isolated Wall_117 / Wall_355 stub (x = 41.58..42.70,
+  y = 78.15..78.90) by >= 1.7 m, and the x = 43.5..46 span used here stays >= 1.65 m
+  off the east wall and >= 7 m off the west wall.
+-->
+<routes scenario="scenario_13">
+
+  <route id="1" leg_by_leg="true"
+         description="Northbound detour: drive north up the x=46 lane from y=74, step west into the x=44.5 lane before reaching the crate stack at (46.3, 82), pass it, then close back onto x=46 and continue to the lane exit. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="47.0" y="74.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.5" y="79.5" yaw="90.0" description="lane_1" />
+    <waypoint x="46.5" y="80.5" yaw="90.0" description="lane_shift" />
+    <waypoint x="47.0" y="83.5" yaw="90.0" description="pass_by" />
+
+  </route>
+
+  <route id="2" leg_by_leg="true"
+         description="Reverse of route 1: spawn at the north end and drive south down the x=46 lane, step west into the x=44.5 lane before the crate stack, pass it, then rejoin x=46 and run out to y=74. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="47.0" y="91.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.5" y="85.0" yaw="270.0" description="lane_2" />
+    <waypoint x="46.5" y="83.5" yaw="270.0" description="lane_shift" />
+    <waypoint x="47.0" y="80.5" yaw="270.0" description="pass_by" />
+
+  </route>
+
+  <route id="3" leg_by_leg="true"
+         description="Northbound wide detour: same lane as route 1 but spawning 3 m further south at y=71 and swinging out to x=43.5, a wider berth around the crate stack, before closing back onto x=46. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="47.0" y="71.0" z="0.0" yaw="90.0" />
+    <waypoint x="46.5" y="79.0" yaw="90.0" description="lane_1" />
+    <waypoint x="46.5" y="80.5" yaw="90.0" description="lane_shift" />
+    <waypoint x="46.0" y="84.0" yaw="90.0" description="pass_by" />
+    <waypoint x="47.0" y="86.0" yaw="90.0" description="rejoin" />
+
+  </route>
+
+  <route id="4" leg_by_leg="true"
+         description="Reverse of route 3: spawn at the north end, drive south down the x=46 lane, take the wide x=43.5 detour around the crate stack, then rejoin x=46 and run out to y=71. Each waypoint is driven as its own leg (pause between legs).">
+    <start x="47.0" y="91.0" z="0.0" yaw="270.0" />
+    <waypoint x="46.5" y="86.0" yaw="270.0" description="lane_2" />
+    <waypoint x="46.5" y="84.0" yaw="270.0" description="lane_shift" />
+    <waypoint x="46.5" y="80.5" yaw="270.0" description="pass_by" />
+    <waypoint x="47.0" y="79.0" yaw="270.0" description="rejoin" />
+
+
+  </route>
+
+</routes>
