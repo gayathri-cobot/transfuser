@@ -39,8 +39,9 @@ def parse_args():
                          help='Path to a trained .pth file, or a directory containing one '
                               'plus args.txt (e.g. model_ckpt/models_2022/<backbone>). '
                               'Pass "" to use random-initialized weights instead.')
-    parser.add_argument('--eval_scenario', type=str, default='scenario_1', help="The scenario you would like to evaluate")
+    parser.add_argument('--eval_scenario', type=str, default='all', help="The scenario you would like to evaluate")
     parser.add_argument('--eval_route', type=str, default='1', help="The scenario you would like to evaluate")
+    parser.add_argument('--debug', action='store_true', help="If set, saves debug images for each step")
     return parser.parse_args()
 
 
@@ -213,7 +214,7 @@ def main():
         with torch.no_grad():
             pred_wp, step_metrics = model.forward_ego(rgb, lidar_bev, target_point, target_point_image,
                                                  ego_vel=ego_vel, expert_waypoints=gt_waypoints, save_path=args.viz_dir,
-                                                 eval=True, bev_gt=bev_gt, depth=depth_gt, semantic=semantic_gt)
+                                                 eval=True, bev_gt=bev_gt, depth=depth_gt, semantic=semantic_gt, debug=args.debug)
         for key in eval_metrics:
             eval_metrics[key].append(step_metrics[f'{key}_mean'])
 
@@ -227,7 +228,9 @@ def main():
         prev_gt_local = gt_local
         prev_pred_local = pred_local
 
-    plot_path = plot_trajectory_comparison(pred_points_anchored, gt_points_anchored, args.viz_dir)
+    if args.eval_scenario != 'all':
+        plot_path = plot_trajectory_comparison(pred_points_anchored, gt_points_anchored, args.viz_dir)
+        print(f"Predicted-vs-ground-truth trajectory plot saved to {plot_path}")
     eval_metrics_summary = {}
     for k, v in eval_metrics.items():
         eval_metrics_summary[f'{k}_mean'] = float(np.mean(v))
@@ -236,7 +239,7 @@ def main():
 
     print(f"Evaluated the full trajectory ({len(dataset)} steps) through "
           f"dataloader -> model forward pass. Debug images written to {args.viz_dir}")
-    print(f"Predicted-vs-ground-truth trajectory plot saved to {plot_path}")
+    
 
 
 if __name__ == '__main__':

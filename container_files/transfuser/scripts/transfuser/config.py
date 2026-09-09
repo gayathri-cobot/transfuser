@@ -38,7 +38,7 @@ class GlobalConfig:
     aug_max_rotation = 20 # degree
     debug = False # If true the model in and outputs will be visualized and saved into Os variable Save_Path
     sync_batch_norm = False # If this is true we convert the batch norms, to synced bach norms.
-    train_debug_save_freq = 50 # At which interval to save debug files to disk during training
+    train_debug_save_freq = 200 # At which interval to save debug files to disk during training
 
     # Lidar discretization, configuration only used for Point Pillars
     use_point_pillars = False
