@@ -23,11 +23,11 @@ fi
 
 APOLLO_DIR="${APOLLO_DIR:-$HOME/repos/apollo}"
 # sim_subsystems is no longer a hard requirement for this script.
-if [ ! -d "$APOLLO_DIR/src/sim_subsystems" ]; then
-	echo "ERROR: \$APOLLO_DIR=$APOLLO_DIR does not contain src/sim_subsystems."
-	echo "       Set APOLLO_DIR to the apollo checkout that has the sim_subsystems package."
-	exit 1
-fi
+# if [ ! -d "$APOLLO_DIR/src/sim_subsystems" ]; then
+# 	echo "ERROR: \$APOLLO_DIR=$APOLLO_DIR does not contain src/sim_subsystems."
+# 	echo "       Set APOLLO_DIR to the apollo checkout that has the sim_subsystems package."
+# 	exit 1
+# fi
 
 # ---------------------------------------------------------------------------
 # Detect the developer's apollo colcon build (--symlink-install).
@@ -58,27 +58,41 @@ fi
 # Auto-extract from the Apollo dev image on first run.
 # Disabled: requires the locally-built apollo-ros-humble-20 dev image, which isn't available here.
 ACADOS_CACHE="$PROJECT_DIR/.acados"
-if [ ! -d "$ACADOS_CACHE/lib" ]; then
-	APOLLO_DEV_IMAGE="apollo-ros-humble-20:latest"
+APOLLO_DEV_IMAGE="apollo-ros-humble-20:latest"
+if [ ! -d "$ACADOS_CACHE/lib" ] && docker image inspect "$APOLLO_DEV_IMAGE" >/dev/null 2>&1; then
 	echo "Extracting acados runtime from $APOLLO_DEV_IMAGE..."
 	mkdir -p "$ACADOS_CACHE"
 	docker run --rm -v "$ACADOS_CACHE:/out" "$APOLLO_DEV_IMAGE" \
 		cp -a /opt/acados/lib /opt/acados/include /out/
 	echo "Cached at $ACADOS_CACHE"
 fi
-ACADOS_MOUNT=(-v "$ACADOS_CACHE:/home/cobot/acados:ro")
+if [ -d "$ACADOS_CACHE/lib" ]; then
+	ACADOS_MOUNT=(-v "$ACADOS_CACHE:/home/cobot/acados:ro")
+else
+	echo "No cached acados runtime and $APOLLO_DEV_IMAGE not available — using the image's baked acados."
+	ACADOS_MOUNT=()
+fi
 
 # sim_subsystems is no longer a hard requirement for this script.
 SIM_SUBSYSTEMS_MOUNT=()
 # SIM_SUBSYSTEMS_MOUNT=(-v "$APOLLO_DIR/src/sim_subsystems:/workspace/ros2_workspace/src/sim_subsystems:rw")
 
-# No local apollo checkout available — skip robot config overrides and the
-# DDS profile mount; the image's baked-in defaults are used instead.
+# If no local apollo checkout is available, skip the robot config overrides
+# and the DDS profile mount; the image's baked-in defaults are used instead.
 APOLLO_CONFIG_MOUNTS=()
-APOLLO_CONFIG_MOUNTS=(
-	-v "$APOLLO_DIR/robot_configurations/local-development:/home/cobot/apollo/config_overrides:ro"
-	-v "$APOLLO_DIR/scripts/dds_config/sil_dds.xml:/home/cobot/fastrtps_profile.xml:ro"
-)
+FASTRTPS_PROFILE_ENV=()
+if [ -d "$APOLLO_DIR/robot_configurations/local-development" ]; then
+	APOLLO_CONFIG_MOUNTS+=(-v "$APOLLO_DIR/robot_configurations/local-development:/home/cobot/apollo/config_overrides:ro")
+fi
+if [ -f "$APOLLO_DIR/scripts/dds_config/sil_dds.xml" ]; then
+	APOLLO_CONFIG_MOUNTS+=(-v "$APOLLO_DIR/scripts/dds_config/sil_dds.xml:/home/cobot/fastrtps_profile.xml:ro")
+	FASTRTPS_PROFILE_ENV=(
+		-e FASTRTPS_DEFAULT_PROFILES_FILE=/home/cobot/fastrtps_profile.xml
+		-e FASTDDS_DEFAULT_PROFILES_FILE=/home/cobot/fastrtps_profile.xml
+	)
+else
+	echo "No local DDS profile found at \$APOLLO_DIR/scripts/dds_config/sil_dds.xml — using the image's baked-in DDS profile."
+fi
 
 xhost +local:docker 2>/dev/null || true
 
@@ -91,10 +105,9 @@ sil_try_reuse_named_container "$TRANSFUSER_CONTAINER_NAME" || docker run -it --r
 	-e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-77}" \
 	-e ROS_LOCALHOST_ONLY=0 \
 	-e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-	-e FASTRTPS_DEFAULT_PROFILES_FILE=/home/cobot/fastrtps_profile.xml \
-	-e FASTDDS_DEFAULT_PROFILES_FILE=/home/cobot/fastrtps_profile.xml \
 	-e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
 	-e SIL_MAP_NAME="${SIL_MAP_NAME:-patrick_henry_whole}" \
+	"${FASTRTPS_PROFILE_ENV[@]}" \
 	"${APOLLO_OVERLAY_ENV[@]}" \
 	-v /tmp/.X11-unix:/tmp/.X11-unix:rw \
 	-v "$PROJECT_DIR/container_files/transfuser:/workspace/:rw" \
