@@ -23,27 +23,6 @@ from torchvision.ops import batched_nms
 # eval metrics
 import metrics
 
-class PIDController(object):
-    def __init__(self, K_P=1.0, K_I=0.0, K_D=0.0, n=20):
-        self._K_P = K_P
-        self._K_I = K_I
-        self._K_D = K_D
-
-        self._window = deque([0 for _ in range(n)], maxlen=n)
-
-    def step(self, error):
-        self._window.append(error)
-
-        if len(self._window) >= 2:
-            integral = np.mean(self._window)
-            derivative = (self._window[-1] - self._window[-2])
-        else:
-            integral = 0.0
-            derivative = 0.0
-
-        return self._K_P * error + self._K_I * integral + self._K_D * derivative
-
-
 class LidarCenterNet(nn.Module):
     """
     Encoder network for LiDAR input list
@@ -87,7 +66,6 @@ class LidarCenterNet(nn.Module):
         ).to(self.device)
 
         # prediction heads
-        # self.head = LidarCenterNetHead(channel, channel, 1, train_cfg=config).to(self.device)
         self.i = 0
 
         # waypoints prediction
@@ -105,10 +83,6 @@ class LidarCenterNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.output = nn.Linear(self.config.gru_hidden_size, 3).to(self.device)
-
-        # pid controller
-        self.turn_controller = PIDController(K_P=config.turn_KP, K_I=config.turn_KI, K_D=config.turn_KD, n=config.turn_n)
-        self.speed_controller = PIDController(K_P=config.speed_KP, K_I=config.speed_KI, K_D=config.speed_KD, n=config.speed_n)
 
     def forward_gru(self, z, target_point):
         z = self.join(z)
@@ -181,7 +155,7 @@ class LidarCenterNet(nn.Module):
 
         return pred_wp, None
 
-    def forward(self, rgb, lidar_bev, ego_waypoint, target_point, target_point_image, ego_vel, bev, depth, semantic, num_points=None, save_path=None, bev_points=None, cam_points=None):
+    def forward(self, rgb, lidar_bev, ego_waypoint, target_point, target_point_image, ego_vel, bev, depth, semantic, num_points=None, save_path=None, ):
         loss = {}
 
         if(self.use_point_pillars == True):
@@ -283,7 +257,6 @@ class LidarCenterNet(nn.Module):
         target_point[0] += self.config.lidar_pos[0]
         point = target_point * self.config.pixels_per_meter
         point[1] *= -1
-        # point[1] = self.config.lidar_resolution_width - point[1] 
         point[1] += int(self.config.lidar_resolution_height / 2.0)
         point = point.astype(np.int32)
         point = np.clip(point, 0, 512)

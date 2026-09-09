@@ -24,16 +24,6 @@ def get_lidar_to_base_transform():
     lidar_to_base = np.linalg.inv(base_to_lidar)
     return lidar_to_base
 
-# temp
-def get_lidar_to_bevimage_transform():
-    # rot 
-    T = np.array([[0, -1, 16],
-                  [-1, 0, 32],
-                  [0, 0, 1]], dtype=np.float32)
-    # scale 
-    T[:2, :] *= 8
-
-    return T
 
 def normalize_angle_degree(x):
     x = x % 360.0

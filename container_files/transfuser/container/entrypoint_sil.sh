@@ -105,6 +105,22 @@ else
 fi
 
 echo ""
+if python3 -c "import torchmetrics" &>/dev/null; then
+    echo "✓ torchmetrics already installed"
+else
+    echo "✓ Installing torchmetrics"
+    pip3 install --quiet torchmetrics || echo "  Warning: pip install torchmetrics failed"
+fi
+
+echo ""
+if python3 -c "import similaritymeasures" &>/dev/null; then
+    echo "✓ similaritymeasures already installed"
+else
+    echo "✓ Installing similaritymeasures"
+    pip3 install --quiet similaritymeasures || echo "  Warning: pip install similaritymeasures failed"
+fi
+
+echo ""
 if python3 -c "import tensorboard" &>/dev/null; then
     echo "tensorboard already installed"
 else

@@ -101,16 +101,12 @@ def main():
     parser.add_argument('--setting', type=str, default='validate', help='What training setting to use. Options: '
                                                                    'all: Train on all towns no validation data. '
                                                                    'validate: ' \
-                                                                   'Split the data into training and validation sets in 80:20 ratio.')
-    parser.add_argument('--root_dir', type=str, default=os.path.join(SCRIPT_DIR, '..', '..', 'data'), help='Root directory of your training data')
+                                                                   'Split the data into training and validation sets '
+                                                                   'in 80:20 ratio.')
+    parser.add_argument('--root_dir', type=str, default=os.path.join(SCRIPT_DIR, '..', '..', 'data'), 
+                        help='Root directory of your training data')
     parser.add_argument('--schedule', type=int, default=1,
                         help='Whether to train with a learning rate schedule. 1 = True')
-    # parser.add_argument('--schedule_reduce_epoch_01', type=int, default=30,
-    #                     help='Epoch at which to reduce the lr by a factor of 10 the first time. Only used with '
-    #                     '--schedule 1')
-    # parser.add_argument('--schedule_reduce_epoch_02', type=int, default=70,
-    #                     help='Epoch at which to reduce the lr by a factor of 10 the second time. Only used with '
-    #                     '--schedule 1')
     parser.add_argument('--backbone', type=str, default='transFuser',
                         help='Which Fusion backbone to use. Options: transFuser, late_fusion, latentTF, ' \
                         'geometric_fusion')
@@ -132,7 +128,8 @@ def main():
                         help='Whether to use the point_pillar lidar encoder instead of voxelization. 0:False, 1:True')
     parser.add_argument('--parallel_training', type=int, default=0,
                         help='If this is true/1 you need to launch the train.py script with CUDA_VISIBLE_DEVICES=0,1 ' \
-                        'torchrun --nnodes=1 --nproc_per_node=2 --max_restarts=0 --rdzv_id=123456780 --rdzv_backend=c10d' \
+                        'torchrun --nnodes=1 --nproc_per_node=2 --max_restarts=0 --rdzv_id=123456780'
+                        ' --rdzv_backend=c10d' \
                         ' train.py the code will be parallelized across GPUs. ' \
                         'If set to false/0, you launch the script with python train.py and only 1 GPU will be used.')
     parser.add_argument('--val_every', type=int, default=5, help='At which epoch frequency to validate.')
@@ -146,7 +143,8 @@ def main():
     'Cache the dataset on the disk pointed to by the SCRATCH enironment variable. Useful if the dataset is stored o' \
     'n slow HDDs and can be temporarily stored on faster SSD storage.')
     parser.add_argument("--save_freq", type=int, default=20, help='The frequency at which the models are saved')
-    parser.add_argument("--trainable", type=str, default="all", help="List the modules that will be trained comma separated; all other modules will be frozen")
+    parser.add_argument("--trainable", type=str, default="all", help="List the modules that will be trained comma" \
+    " separated; all other modules will be frozen")
 
 
     args = parser.parse_args()
@@ -155,10 +153,6 @@ def main():
 
     if(bool(args.use_disk_cache) == True):
         if (parallel == True):
-            # NOTE: This is specific to our cluster setup where the data is stored on slow storage.
-            # During training we cache the dataset on the fast storage of the local compute nodes.
-            # Adapt to your cluster setup as needed.
-            # Important initialize the parallel threads from torch run to the same folder (so they can share the cache).
             tmp_folder = str(os.environ.get('SCRATCH'))
             print("Tmp folder for dataset cache: ", tmp_folder)
             tmp_folder = tmp_folder + "/dataset_cache"
@@ -203,15 +197,10 @@ def main():
         config.detailed_losses_weights[index_bev] = 0.0
 
     # Create model and optimizers
-    model = LidarCenterNet(config, device, args.backbone, args.image_architecture, args.lidar_architecture, bool(args.use_velocity))
+    model = LidarCenterNet(config, device, args.backbone, args.image_architecture, args.lidar_architecture, 
+                           bool(args.use_velocity))
 
-    # if (parallel == True):
-    #     # Synchronizing the Batch Norms increases the Batch size with which they are compute by *num_gpus
-    #     if(bool(args.sync_batch_norm) == True):
-    #         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    #     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, broadcast_buffers=False, find_unused_parameters=False)
-
-    # Same as the block above, but split in two so that the freezing can happen in between. It has to
+    # split in two so that the freezing can happen in between. It has to
     # run after convert_sync_batchnorm, which rebuilds the norm layers, and before the DDP wrap, so
     # that DDP's reducer never registers the frozen parameters. Freezing on the unwrapped model also
     # means freeze_groups can look the submodules up directly instead of going through model.module.
@@ -235,7 +224,8 @@ def main():
         print("Training only:", ', '.join(sorted(trainable_groups)), "- the rest of the network is frozen.")
 
     if (parallel == True):
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, broadcast_buffers=False, find_unused_parameters=False)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank, 
+                                                          broadcast_buffers=False, find_unused_parameters=False)
 
     model.cuda(device=device)
 
@@ -246,9 +236,8 @@ def main():
                          "exist when config.multitask is True." % args.trainable)
 
     if ((bool(args.zero_redundancy_optimizer) == True) and (parallel == True)):
-
-        # optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=optim.AdamW, lr=args.lr) # Saves GPU memory during DDP training
-        optimizer = ZeroRedundancyOptimizer(trainable_params, optimizer_class=optim.AdamW, lr=args.lr) # Saves GPU memory during DDP training
+        optimizer = ZeroRedundancyOptimizer(trainable_params, optimizer_class=optim.AdamW, lr=args.lr) 
+        # Saves GPU memory during DDP training
     else:
         # optimizer = optim.AdamW(model.parameters(), lr=args.lr) # For single GPU training
         optimizer = optim.AdamW(trainable_params, lr=args.lr) # For single GPU training
@@ -261,15 +250,8 @@ def main():
     print ('Total trainable parameters: ', params)
 
     # Data
-    # Split the list of route directories 80:20 (not individual frames). Windows within a
-    # route are temporally adjacent and overlap, so a frame-level split would leak near-identical
-    # samples across train/val. Splitting whole routes keeps the sets independent.
     train_routes = (config.train_data)
     val_routes   = (config.val_data)
-    # random.Random(42).shuffle(routes)  # fixed seed -> identical split across all ranks
-    # split_idx = int(len(routes) * 0.8)
-    # train_routes, val_routes = routes[:split_idx], routes[split_idx:]
-
     train_set = IsaacSimData(root=train_routes, config=config, shared_dict=shared_dict)
     val_set   = IsaacSimData(root=val_routes,   config=config, shared_dict=shared_dict)
     print("Train set size: ", len(train_set), "Val set size: ", len(val_set))
@@ -278,13 +260,19 @@ def main():
     g_cuda.manual_seed(torch.initial_seed())
 
     if(parallel == True):
-        sampler_train = torch.utils.data.distributed.DistributedSampler(train_set, shuffle=True, num_replicas=world_size, rank=rank)
-        sampler_val   = torch.utils.data.distributed.DistributedSampler(val_set,   shuffle=True, num_replicas=world_size, rank=rank)
-        dataloader_train = DataLoader(train_set, sampler=sampler_train, batch_size=args.batch_size, worker_init_fn=seed_worker, generator=g_cuda, num_workers=8, pin_memory=True)
-        dataloader_val   = DataLoader(val_set,   sampler=sampler_val,   batch_size=args.batch_size, worker_init_fn=seed_worker, generator=g_cuda, num_workers=8, pin_memory=True)
+        sampler_train = torch.utils.data.distributed.DistributedSampler(train_set, shuffle=True, 
+                                                                        num_replicas=world_size, rank=rank)
+        sampler_val   = torch.utils.data.distributed.DistributedSampler(val_set,   shuffle=True, 
+                                                                        num_replicas=world_size, rank=rank)
+        dataloader_train = DataLoader(train_set, sampler=sampler_train, batch_size=args.batch_size, 
+                                      worker_init_fn=seed_worker, generator=g_cuda, num_workers=8, pin_memory=True)
+        dataloader_val   = DataLoader(val_set,   sampler=sampler_val,   batch_size=args.batch_size,
+                                       worker_init_fn=seed_worker, generator=g_cuda, num_workers=8, pin_memory=True)
     else:
-      dataloader_train = DataLoader(train_set, shuffle=True, batch_size=args.batch_size, worker_init_fn=seed_worker, generator=g_cuda, num_workers=0, pin_memory=True)
-      dataloader_val   = DataLoader(val_set,   shuffle=True, batch_size=args.batch_size, worker_init_fn=seed_worker, generator=g_cuda, num_workers=0, pin_memory=True)
+      dataloader_train = DataLoader(train_set, shuffle=True, batch_size=args.batch_size, worker_init_fn=seed_worker, 
+                                    generator=g_cuda, num_workers=0, pin_memory=True)
+      dataloader_val   = DataLoader(val_set,   shuffle=True, batch_size=args.batch_size, worker_init_fn=seed_worker, 
+                                    generator=g_cuda, num_workers=0, pin_memory=True)
 
     # Create logdir
     if ((not os.path.isdir('model_ckpt/' + args.logdir)) and (rank == 0)):
@@ -306,34 +294,27 @@ def main():
         path = 'model_ckpt/' + args.load_file
         print("Loading checkpoint from:", path)
         model.load_state_dict(torch.load(path, map_location=model.device))
-        # optimizer.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "optimizer_"), map_location=model.device))
-        # scheduler.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "scheduler_"), map_location=model.device))
-
         # Load optimizer and schedulere only when parameters are not frozen
         if (len(frozen_modules) == 0):
-            optimizer.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "optimizer_"), map_location=model.device))
-            scheduler.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "scheduler_"), map_location=model.device))
+            optimizer.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "optimizer_"), 
+                                                 map_location=model.device))
+            scheduler.load_state_dict(torch.load('model_ckpt/' + args.load_file.replace("model_", "scheduler_"), 
+                                                 map_location=model.device))
         else:
             print("Freezing is active: loaded the model weights only, optimizer and scheduler state start fresh.")
 
 
-    # trainer = Engine(model=model, optimizer=optimizer, scheduler=scheduler, dataloader_train=dataloader_train, dataloader_val=dataloader_val,
-    #                  args=args, config=config, writer=writer, device=device, rank=rank, world_size=world_size,
-    #                  parallel=parallel, cur_epoch=args.start_epoch)
-    trainer = Engine(model=model, optimizer=optimizer, scheduler=scheduler, dataloader_train=dataloader_train, dataloader_val=dataloader_val,
-                     args=args, config=config, writer=writer, device=device, rank=rank, world_size=world_size,
-                     parallel=parallel, cur_epoch=args.start_epoch, frozen_modules=frozen_modules)
+
+    trainer = Engine(model=model, optimizer=optimizer, scheduler=scheduler, dataloader_train=dataloader_train, 
+                     dataloader_val=dataloader_val, args=args, config=config, writer=writer, device=device, rank=rank,
+                     world_size=world_size, parallel=parallel, cur_epoch=args.start_epoch, frozen_modules=frozen_modules)
 
     for epoch in range(trainer.cur_epoch, args.epochs):
         if(parallel == True):
-            # Update the seed depending on the epoch so that the distributed sampler will use different shuffles across different epochs
+            # Update the seed depending on the epoch so that the distributed sampler will use different shuffles across 
+            # different epochs
             sampler_train.set_epoch(epoch)
-        # if ((epoch == args.schedule_reduce_epoch_01) or (epoch==args.schedule_reduce_epoch_02)) and (args.schedule == 1):
-        #     current_lr = optimizer.param_groups[0]['lr']
-        #     new_lr = current_lr * 0.1
-        #     print("Reduce learning rate by factor 10 to:", new_lr)
-        #     for g in optimizer.param_groups:
-        #         g['lr'] = new_lr
+
         trainer.train()
 
         if((args.setting != 'all') and (epoch % args.val_every == 0)):
@@ -355,10 +336,8 @@ class Engine(object):
     Engine that runs training.
     """
 
-    # def __init__(self, model, optimizer, scheduler, dataloader_train, dataloader_val, args, config, writer, device, rank=0,
-    #              world_size=1, parallel=False, cur_epoch=0):
-    def __init__(self, model, optimizer, scheduler, dataloader_train, dataloader_val, args, config, writer, device, rank=0,
-                 world_size=1, parallel=False, cur_epoch=0, frozen_modules=None):
+    def __init__(self, model, optimizer, scheduler, dataloader_train, dataloader_val, args, config, writer, device, 
+                 rank=0, world_size=1, parallel=False, cur_epoch=0, frozen_modules=None):
         self.frozen_modules = frozen_modules if (frozen_modules is not None) else []
         self.cur_epoch = cur_epoch
         self.bestval_epoch = cur_epoch
@@ -440,25 +419,13 @@ class Engine(object):
 
         ego_vel = data['velocity'].to(self.device, dtype=torch.float32)
 
-        if ((self.args.backbone == 'transFuser') or (self.args.backbone == 'late_fusion') or (self.args.backbone == 'latentTF')):
-            losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
+       
+        losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
                            target_point_image=target_point_image,
                            ego_vel=ego_vel.reshape(-1, 1), bev=bev,
                            label=label, save_path=self.vis_save_path,
                            depth=depth, semantic=semantic, num_points=num_points)
-        elif (self.args.backbone == 'geometric_fusion'):
-
-            bev_points = data['bev_points'].long().to('cuda', dtype=torch.int64)
-            cam_points = data['cam_points'].long().to('cuda', dtype=torch.int64)
-            losses = self.model(rgb, lidar, ego_waypoint=ego_waypoint, target_point=target_point,
-                           target_point_image=target_point_image,
-                           ego_vel=ego_vel.reshape(-1, 1), bev=bev,
-                           label=label, save_path=self.vis_save_path,
-                           depth=depth, semantic=semantic, num_points=num_points,
-                           bev_points=bev_points, cam_points=cam_points)
-        else:
-            raise ("The chosen vision backbone does not exist. The options are: transFuser, late_fusion, geometric_fusion, latentTF")
-
+        
         return losses
 
 
@@ -489,9 +456,6 @@ class Engine(object):
             norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float('inf'))
             norm_epoch += float(norm.item())
 
-            # Per head gradient norms. max_norm=inf means clip_grad_norm_ only measures the norm and
-            # rescales nothing, which is how the whole network norm above is computed too. Grouping the
-            # parameters per head first is what makes this one number per head instead of one per tensor.
             for group, group_params in self.grad_norm_groups.items():
                 group_norm = torch.nn.utils.clip_grad_norm_(group_params, max_norm=float('inf'))
                 detailed_norms_epoch[group] += float(group_norm.item())
@@ -526,7 +490,8 @@ class Engine(object):
             num_batches += 1
             loss_epoch += float(loss.item())
 
-        val_loss, wp_loss = self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, prefix= 'val_', validate = True)
+        val_loss, wp_loss = self.log_losses(loss_epoch, detailed_val_losses_epoch, num_batches, prefix= 'val_', 
+                                            validate = True)
 
         if self.parallel:
             # Only rank 0 has the true aggregated val loss (log_losses returns None elsewhere).
@@ -538,7 +503,6 @@ class Engine(object):
 
         return val_loss, wp_loss
 
-    # def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False):
     def log_losses(self, loss_epoch, detailed_losses_epoch, num_batches, total_norm = None, prefix='', validate=False,
                    detailed_norms = None):
         # Average all the batches into one number
@@ -591,13 +555,17 @@ class Engine(object):
         return None, None
 
     def save(self):
-        # NOTE saving the model with torch.save(model.module.state_dict(), PATH) if parallel processing is used would be cleaner, we keep it for backwards compatibility
+      
         os.makedirs('model_ckpt/', exist_ok=True)
-        torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'model_%d.pth' % self.cur_epoch))
-        torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'optimizer_%d.pth' % self.cur_epoch))
-        torch.save(self.scheduler.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 'scheduler_%d.pth' % self.cur_epoch))
+        torch.save(self.model.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 
+                                                         'model_%d.pth' % self.cur_epoch))
+        torch.save(self.optimizer.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 
+                                                             'optimizer_%d.pth' % self.cur_epoch))
+        torch.save(self.scheduler.state_dict(), os.path.join('model_ckpt/'+self.args.logdir, 
+                                                             'scheduler_%d.pth' % self.cur_epoch))
 
-# We need to seed the workers individually otherwise random processes in the dataloader return the same values across workers!
+# We need to seed the workers individually otherwise random processes in the dataloader return 
+# the same values across workers!
 def seed_worker(worker_id):
     # Torch initial seed is properly set across the different workers, we need to pass it to numpy and random.
     worker_seed = (torch.initial_seed()) % 2**32

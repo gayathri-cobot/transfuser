@@ -90,8 +90,10 @@ class TransfuserBackbone(nn.Module):
                             config=config, use_velocity=use_velocity)
 
         if(self.image_encoder.features.feature_info[4]['num_chs'] != self.config.perception_output_features):
-            self.change_channel_conv_image = nn.Conv2d(self.image_encoder.features.feature_info[4]['num_chs'], self.config.perception_output_features, (1, 1))
-            self.change_channel_conv_lidar = nn.Conv2d(self.image_encoder.features.feature_info[4]['num_chs'], self.config.perception_output_features, (1, 1))
+            self.change_channel_conv_image = nn.Conv2d(self.image_encoder.features.feature_info[4]['num_chs'], 
+                                                       self.config.perception_output_features, (1, 1))
+            self.change_channel_conv_lidar = nn.Conv2d(self.image_encoder.features.feature_info[4]['num_chs'], 
+                                                       self.config.perception_output_features, (1, 1))
         else:
             self.change_channel_conv_image = nn.Sequential()
             self.change_channel_conv_lidar = nn.Sequential()
@@ -151,8 +153,10 @@ class TransfuserBackbone(nn.Module):
         lidar_embd_layer1 = self.avgpool_lidar(lidar_features)
 
         image_features_layer1, lidar_features_layer1 = self.transformer1(image_embd_layer1, lidar_embd_layer1, velocity)
-        image_features_layer1 = F.interpolate(image_features_layer1, size=(image_features.shape[2],image_features.shape[3]), mode='bilinear', align_corners=False)
-        lidar_features_layer1 = F.interpolate(lidar_features_layer1, size=(lidar_features.shape[2],lidar_features.shape[3]), mode='bilinear', align_corners=False)
+        image_features_layer1 = F.interpolate(image_features_layer1, size=(image_features.shape[2],
+                                                image_features.shape[3]), mode='bilinear', align_corners=False)
+        lidar_features_layer1 = F.interpolate(lidar_features_layer1, size=(lidar_features.shape[2],
+                                                lidar_features.shape[3]), mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer1
         lidar_features = lidar_features + lidar_features_layer1
 
@@ -163,8 +167,10 @@ class TransfuserBackbone(nn.Module):
         image_embd_layer2 = self.avgpool_img(image_features)
         lidar_embd_layer2 = self.avgpool_lidar(lidar_features)
         image_features_layer2, lidar_features_layer2 = self.transformer2(image_embd_layer2, lidar_embd_layer2, velocity)
-        image_features_layer2 = F.interpolate(image_features_layer2, size=(image_features.shape[2],image_features.shape[3]), mode='bilinear', align_corners=False)
-        lidar_features_layer2 = F.interpolate(lidar_features_layer2, size=(lidar_features.shape[2],lidar_features.shape[3]), mode='bilinear', align_corners=False)
+        image_features_layer2 = F.interpolate(image_features_layer2, size=(image_features.shape[2],
+                                                    image_features.shape[3]), mode='bilinear', align_corners=False)
+        lidar_features_layer2 = F.interpolate(lidar_features_layer2, size=(lidar_features.shape[2],
+                                                    lidar_features.shape[3]), mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer2
         lidar_features = lidar_features + lidar_features_layer2
 
@@ -175,8 +181,10 @@ class TransfuserBackbone(nn.Module):
         image_embd_layer3 = self.avgpool_img(image_features)
         lidar_embd_layer3 = self.avgpool_lidar(lidar_features)
         image_features_layer3, lidar_features_layer3 = self.transformer3(image_embd_layer3, lidar_embd_layer3, velocity)
-        image_features_layer3 = F.interpolate(image_features_layer3, size=(image_features.shape[2],image_features.shape[3]), mode='bilinear', align_corners=False)
-        lidar_features_layer3 = F.interpolate(lidar_features_layer3, size=(lidar_features.shape[2],lidar_features.shape[3]), mode='bilinear', align_corners=False)
+        image_features_layer3 = F.interpolate(image_features_layer3, size=(image_features.shape[2],
+                                                    image_features.shape[3]), mode='bilinear', align_corners=False)
+        lidar_features_layer3 = F.interpolate(lidar_features_layer3, size=(lidar_features.shape[2],
+                                                    lidar_features.shape[3]), mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer3
         lidar_features = lidar_features + lidar_features_layer3
 
@@ -188,8 +196,10 @@ class TransfuserBackbone(nn.Module):
         lidar_embd_layer4 = self.avgpool_lidar(lidar_features)
 
         image_features_layer4, lidar_features_layer4 = self.transformer4(image_embd_layer4, lidar_embd_layer4, velocity)
-        image_features_layer4 = F.interpolate(image_features_layer4, size=(image_features.shape[2],image_features.shape[3]), mode='bilinear', align_corners=False)
-        lidar_features_layer4 = F.interpolate(lidar_features_layer4, size=(lidar_features.shape[2],lidar_features.shape[3]), mode='bilinear', align_corners=False)
+        image_features_layer4 = F.interpolate(image_features_layer4, size=(image_features.shape[2],
+                                                    image_features.shape[3]), mode='bilinear', align_corners=False)
+        lidar_features_layer4 = F.interpolate(lidar_features_layer4, size=(lidar_features.shape[2],
+                                                    lidar_features.shape[3]), mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer4
         lidar_features = lidar_features + lidar_features_layer4
 
@@ -302,7 +312,8 @@ class GPT(nn.Module):
         self.config = config
 
         # positional embedding parameter (learnable), image + lidar
-        self.pos_emb = nn.Parameter(torch.zeros(1, self.seq_len * img_vert_anchors * img_horz_anchors + self.seq_len * lidar_vert_anchors * lidar_horz_anchors, n_embd))
+        self.pos_emb = nn.Parameter(torch.zeros(1, self.seq_len * img_vert_anchors * img_horz_anchors + 
+                                                self.seq_len * lidar_vert_anchors * lidar_horz_anchors, n_embd))
         
         # velocity embedding
         self.use_velocity = use_velocity
@@ -324,7 +335,8 @@ class GPT(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            module.weight.data.normal_(mean=self.config.gpt_linear_layer_init_mean, std=self.config.gpt_linear_layer_init_std)
+            module.weight.data.normal_(mean=self.config.gpt_linear_layer_init_mean, 
+                                       std=self.config.gpt_linear_layer_init_std)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.LayerNorm):
@@ -344,8 +356,10 @@ class GPT(nn.Module):
         img_h, img_w = image_tensor.shape[2:4]
         
         assert self.seq_len == 1
-        image_tensor = image_tensor.view(bz, self.seq_len, -1, img_h, img_w).permute(0,1,3,4,2).contiguous().view(bz, -1, self.n_embd)
-        lidar_tensor = lidar_tensor.view(bz, self.seq_len, -1, lidar_h, lidar_w).permute(0,1,3,4,2).contiguous().view(bz, -1, self.n_embd)
+        image_tensor = image_tensor.view(bz, self.seq_len, -1, 
+                                         img_h, img_w).permute(0,1,3,4,2).contiguous().view(bz, -1, self.n_embd)
+        lidar_tensor = lidar_tensor.view(bz, self.seq_len, -1, 
+                                         lidar_h, lidar_w).permute(0,1,3,4,2).contiguous().view(bz, -1, self.n_embd)
 
         token_embeddings = torch.cat((image_tensor, lidar_tensor), dim=1)
 
@@ -361,7 +375,8 @@ class GPT(nn.Module):
         x = self.blocks(x) # (B, an * T, C)
         x = self.ln_f(x) # (B, an * T, C)
 
-        x = x.view(bz, self.seq_len*self.img_vert_anchors*self.img_horz_anchors + self.seq_len*self.lidar_vert_anchors*self.lidar_horz_anchors, self.n_embd)
+        x = x.view(bz, self.seq_len*self.img_vert_anchors*self.img_horz_anchors + 
+                   self.seq_len*self.lidar_vert_anchors*self.lidar_horz_anchors, self.n_embd)
 
         image_tensor_out = x[:, :self.seq_len*self.img_vert_anchors*self.img_horz_anchors, :].contiguous().view(bz * self.seq_len, -1, img_h, img_w)
         lidar_tensor_out = x[:, self.seq_len*self.img_vert_anchors*self.img_horz_anchors:, :].contiguous().view(bz * self.seq_len, -1, lidar_h, lidar_w)

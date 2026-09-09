@@ -54,9 +54,7 @@ class IsaacSimData(Dataset):
         self.lidars = []
         self.measurements = []
 
-        # root entries are already leaf route directories (e.g. GlobalConfig.train_data
-        # gives <root_dir>/<scenario>/<route>), each directly containing rgb/lidar/depth/
-        # segmented/costmap/trajectory - no further "route" subfolder level underneath.
+
         for route_dir in tqdm(root, file=sys.stdout):
             route_dir = Path(route_dir)
 
@@ -64,22 +62,8 @@ class IsaacSimData(Dataset):
             # enumerate them from the lidar folder and index into that ordered list.
             frame_stems = sorted(p.stem for p in (route_dir / "lidar").glob("*.npy"))
             num_seq = len(frame_stems)
-
-            # A handful of captures have malformed lidar frames (object-dtype arrays
-            # instead of the expected structured (x,y,z) dtype, or files that fail to
-            # load at all). Precompute which stems are usable so any window touching
-            # a bad frame can be skipped below instead of crashing __getitem__ later.
-            # valid_lidar_stem = {
-            #     stem: is_valid_lidar_frame(route_dir / "lidar" / (stem + ".npy"))
-            #     for stem in frame_stems
-            # }
-
             # ignore the first two and last two frame
             for seq in range(2, num_seq - self.pred_len - self.seq_len - 2):
-                # window_stems = [frame_stems[seq + idx] for idx in range(self.seq_len)]
-                # if not all(valid_lidar_stem[stem] for stem in window_stems):
-                #     continue
-
                 # load input seq and pred seq jointly
                 image = []
                 bev = []
@@ -96,8 +80,6 @@ class IsaacSimData(Dataset):
                     semantic.append(route_dir / "segmented" / "front" / (stem + ".png"))
                     lidar.append(route_dir / "lidar" / (stem + ".npy"))
 
-                # Additionally keep the future frames' trajectory so ego waypoints can be
-                # computed directly from our own recorded pose, with no bounding-box labels.
                 for idx in range(self.seq_len + self.pred_len):
                     stem = frame_stems[seq + idx]
                     measurement.append(route_dir / "trajectory" / (stem + ".json"))
@@ -109,17 +91,12 @@ class IsaacSimData(Dataset):
                 self.lidars.append(lidar)
                 self.measurements.append(measurement)
 
-        # There is a complex "memory leak"/performance issue when using Python objects like lists in a Dataloader that is loaded with multiprocessing, num_workers > 0
-        # A summary of that ongoing discussion can be found here https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
-        # A workaround is to store the string lists as numpy byte objects because they only have 1 refcount.
         self.images       = np.array(self.images      ).astype(np.string_)
         self.bevs         = np.array(self.bevs        ).astype(np.string_)
         self.depths       = np.array(self.depths      ).astype(np.string_)
         self.semantics    = np.array(self.semantics   ).astype(np.string_)
         self.lidars       = np.array(self.lidars      ).astype(np.string_)
         self.measurements = np.array(self.measurements).astype(np.string_)
-        # print(self.images.shape)
-        # print("Loading %d lidars from %d folders"%(len(self.lidars), len(root)))
 
     def __len__(self):
         """Returns the length of the dataset. """
@@ -154,7 +131,8 @@ class IsaacSimData(Dataset):
 
         for i in range(self.seq_len):
             if not self.data_cache is None and str(measurements[i], encoding='utf-8') in self.data_cache:
-                    measurements_i, images_i, lidars_i, lidars_raw_i, bevs_i, depths_i, semantics_i = self.data_cache[str(measurements[i], encoding='utf-8')]
+                    measurements_i, images_i, lidars_i, lidars_raw_i, 
+                    bevs_i, depths_i, semantics_i = self.data_cache[str(measurements[i], encoding='utf-8')]
                     images_i = cv2.imdecode(images_i, cv2.IMREAD_UNCHANGED)
                     depths_i = cv2.imdecode(depths_i, cv2.IMREAD_UNCHANGED)
                     semantics_i = cv2.imdecode(semantics_i, cv2.IMREAD_UNCHANGED)
@@ -164,9 +142,6 @@ class IsaacSimData(Dataset):
                 with open(str(measurements[i], encoding='utf-8'), 'r') as f1:
                     measurements_i = ujson.load(f1)
 
-                # Isaac Sim saves lidar as a structured (x, y, z) array (no intensity),
-                # not the [metadata, points] pickle CARLA used - load the fields directly
-                # and pad a constant 4th column so align()'s homogeneous transform still works.
                 lidar_points = np.load(str(lidars[i], encoding='utf-8'), allow_pickle=True)
                 lidars_i = np.stack([lidar_points['x'], lidar_points['y'], lidar_points['z'],
                                      np.ones(len(lidar_points), dtype=np.float32)], axis=-1).astype(np.float32)
@@ -180,8 +155,7 @@ class IsaacSimData(Dataset):
                     print("Error loading file: ", str(images[i], encoding='utf-8'))
                 images_i = scale_image_cv2(cv2.cvtColor(images_i, cv2.COLOR_BGR2RGB), self.scale)
 
-                # costmap is already a plain black/white occupancy image. so just threshold it into a single
-                # binary occupancy channel: 1 = free, 0 = occupied.
+
                 bev_array = cv2.imread(str(bevs[i], encoding='utf-8'), cv2.IMREAD_GRAYSCALE)
                 if (bev_array is None):
                     print("Error loading file: ", str(bevs[i], encoding='utf-8'))
@@ -206,9 +180,11 @@ class IsaacSimData(Dataset):
                     result, compressed_imgage = cv2.imencode('.png', images_i)
                     result, compressed_depths = cv2.imencode('.png', depths_i)
                     result, compressed_semantics = cv2.imencode('.png', semantics_i)
-                    compressed_bevs = io.BytesIO()  # bev has 2 channels which does not work with png compression so we use generic numpy in memory compression
+                    compressed_bevs = io.BytesIO()  
                     np.savez_compressed(compressed_bevs, bevs_i)
-                    self.data_cache[str(measurements[i], encoding='utf-8')] = (measurements_i, compressed_imgage, lidars_i, lidars_raw_i, compressed_bevs, compressed_depths, compressed_semantics)
+                    self.data_cache[str(measurements[i], encoding='utf-8')] = (measurements_i, compressed_imgage, 
+                                                                               lidars_i, lidars_raw_i, compressed_bevs,
+                                                                                 compressed_depths, compressed_semantics)
 
             loaded_images.append(images_i)
             loaded_bevs.append(bevs_i)
@@ -216,12 +192,7 @@ class IsaacSimData(Dataset):
             loaded_semantics.append(semantics_i)
             loaded_lidars.append(lidars_i)
             loaded_measurements.append(measurements_i)
-            if (backbone == 'geometric_fusion'):
-                loaded_lidars_raw.append(lidars_raw_i)
 
-        # measurements holds seq_len+pred_len trajectory paths; grab the future ones
-        # (beyond the seq_len used above for lidar alignment) before measurements gets
-        # reassigned to the loaded current/past frames below.
         future_measurements = []
         for i in range(self.seq_len, self.seq_len + self.pred_len):
             with open(str(measurements[i], encoding='utf-8'), 'r') as f2:
@@ -243,11 +214,8 @@ class IsaacSimData(Dataset):
             crop_shift = degree / 60 * self.img_width / self.scale # we scale first
 
         images_i = loaded_images[self.seq_len-1]
-        images_i = crop_image_cv2(images_i, crop=self.img_resolution, crop_shift=crop_shift, crop_shift_y=self.img_crop_shift_y)
-        # Use the full captured image instead of center-cropping to config.img_resolution -
-        # crop_image_cv2 would also transpose HWC -> CHW, so do that directly here since
-        # there's no crop window (and therefore no crop_shift) to apply.
-        # images_i = np.transpose(images_i, (2, 0, 1))
+        images_i = crop_image_cv2(images_i, crop=self.img_resolution, crop_shift=crop_shift, 
+                                  crop_shift_y=self.img_crop_shift_y)
 
         bevs_i = load_crop_bev_npy(loaded_bevs[self.seq_len-1], degree)
         
@@ -256,18 +224,18 @@ class IsaacSimData(Dataset):
 
         if self.multitask:
             depths_i = loaded_depths[self.seq_len-1]
-            depths_i = get_depth(crop_image_cv2(depths_i[..., None], crop=self.img_resolution, crop_shift=crop_shift, crop_shift_y=self.img_crop_shift_y))
+            depths_i = get_depth(crop_image_cv2(depths_i[..., None], crop=self.img_resolution, crop_shift=crop_shift, 
+                                                crop_shift_y=self.img_crop_shift_y))
 
             semantics_i = loaded_semantics[self.seq_len-1]
-            semantics_i = self.converter[crop_seg(semantics_i, crop=self.img_resolution, crop_shift=crop_shift, crop_shift_y=self.img_crop_shift_y)]
+            semantics_i = self.converter[crop_seg(semantics_i, crop=self.img_resolution, crop_shift=crop_shift, 
+                                                  crop_shift_y=self.img_crop_shift_y)]
 
             data['depth'] = depths_i
             data['semantic'] = semantics_i
 
         # need to concatenate seq data here and align to the same coordinate
         lidars = []
-        if (backbone == 'geometric_fusion'):
-            lidars_raw = []
         if (self.use_point_pillars == True):
             lidars_pillar = []
 
@@ -278,11 +246,6 @@ class IsaacSimData(Dataset):
             lidar_bev = lidar_to_histogram_features(lidar)
             lidars.append(lidar_bev)
 
-            if (backbone == 'geometric_fusion'):
-                # We don't align the raw LiDARs for now
-                lidar_raw = loaded_lidars_raw[i]
-                lidars_raw.append(lidar_raw)
-
             if (self.use_point_pillars == True):
                 # We want to align the LiDAR for the point pillars, but not voxelize them
                 lidar_pillar = deepcopy(loaded_lidars[i])
@@ -291,19 +254,7 @@ class IsaacSimData(Dataset):
 
         # NOTE: This flips the ordering of the LiDARs since we only use 1 it does nothing. Can potentially be removed.
         lidar_bev = np.concatenate(lidars[::-1], axis=0)
-        if (backbone == 'geometric_fusion'):
-            lidars_raw = np.concatenate(lidars_raw[::-1], axis=0)
-        if (self.use_point_pillars == True):
-            lidars_pillar = np.concatenate(lidars_pillar[::-1], axis=0)
 
-        if (backbone == 'geometric_fusion'):
-            curr_bev_points, curr_cam_points = lidar_bev_cam_correspondences(deepcopy(lidars_raw), lidar_pos=self.lidar_pos, camera_pos=self.camera_pos, lidar_vis=lidar_bev, image_vis=images_i, step=index, debug=True)
-
-        # No per-actor bounding-box labels are available for this dataset, so waypoints
-        # come directly from our own recorded ego trajectory instead of matching actor
-        # IDs across future label frames. Future poses relative to the current frame,
-        # in meters, mirror what get_waypoints()+transform_waypoints() did for the ego
-        # car previously.
         current_matrix = pose_to_matrix(measurements[self.seq_len-1])
         current_matrix_inv = np.linalg.inv(current_matrix)
 
@@ -319,16 +270,14 @@ class IsaacSimData(Dataset):
 
 
         if(self.use_point_pillars == True):
-            # We need to have a fixed number of LiDAR points for the batching to work, so we pad them and save to total amound of real LiDAR points.
+            # We need to have a fixed number of LiDAR points for the batching to work, so we pad them and save 
+            # to total amound of real LiDAR points.
             fixed_lidar_raw = np.empty((self.max_lidar_points, 4), dtype=np.float32)
             num_points = min(self.max_lidar_points, lidars_pillar.shape[0])
             fixed_lidar_raw[:num_points, :4] = lidars_pillar
             data['lidar_raw'] = fixed_lidar_raw
             data['num_points'] = num_points
 
-        if (backbone == 'geometric_fusion'):
-            data['bev_points'] = curr_bev_points
-            data['cam_points'] = curr_cam_points
 
         data['lidar'] = lidar_bev
         data['ego_waypoint'] = ego_waypoint
@@ -634,10 +583,6 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
 
     world[:, :3] = world[:, :3] + (np.array(lidar_pos) - np.array(camera_pos))
 
-    # base_link/ROS convention has +y = left, but the pinhole model below needs
-    # +x (image column) = right, so flip the lateral axis before filtering/projecting.
-    # world[:, 1] *= -1
-
     # get valid points in 64x64 grid
     lidar = world[abs(world[:,1])<lidar_meters_y] # 32m to the sides
     lidar = lidar[lidar[:,0]<lidar_meters_x] # 64m to the front
@@ -739,7 +684,8 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
         valid_bev_points.append([bev_x, bev_y])
         # Calculate index in the final image by rounding down
         img_x = int(results_total[i][0])
-        # The network input images use a top left coordinate system, we need to convert the bottom left coordinates by inverting the y axis
+        # The network input images use a top left coordinate system, we need to convert the bottom left 
+        # coordinates by inverting the y axis
         img_y = (int(results_total[i][1]) )*-1
         valid_cam_points.append([img_x, img_y])
 
@@ -765,8 +711,10 @@ def lidar_bev_cam_correspondences(world, lidar_pos, camera_pos, lidar_vis=None, 
     valid_bev_points = np.array(valid_bev_points)
     valid_cam_points = np.array(valid_cam_points)
 
-    bev_points, cam_points = correspondences_at_one_scale(valid_bev_points, valid_cam_points,  (lidar_width // downscale_factor),
-                                                          (lidar_height // downscale_factor), (img_width // downscale_factor) * 2,
+    bev_points, cam_points = correspondences_at_one_scale(valid_bev_points, valid_cam_points,  
+                                                          (lidar_width // downscale_factor),
+                                                          (lidar_height // downscale_factor), 
+                                                          (img_width // downscale_factor) * 2,
                                                           (img_height // downscale_factor), downscale_factor)
 
 
@@ -779,8 +727,6 @@ def draw_target_point(target_point, color = (255, 255, 255)):
     # convert to lidar coordinate
     target_point[0] += 0.115
     point = target_point * 8.
-    # point[1] *= -1
-    # point[1] = 256 - point[1] 
     point[1] += 128 
     point = point.astype(np.int32)
     point = np.clip(point, 0, 256)
@@ -794,44 +740,6 @@ def compute_yaw(measurement):
     q = measurement['rotation']
     x, y, z, w = q['x'], q['y'], q['z'], q['w']
     return np.arctan2(2 * (w*z + x*y), 1 - 2 * (y*y + z*z))
-
-# def plot_lidar_bev(lidar_points, output_path, title=None):
-#     """Human-readable BEV plot: above/below split as two labeled heatmaps in real
-#     map-frame meters, with a colorbar. render_histogram_bev()'s raw grayscale image
-#     is oriented for feeding a model (rot90 + concatenated), not for reading by eye --
-#     this uses the same bins/threshold but keeps the natural x/y orientation instead.
-#     """
-#     pixels_per_meter = 8
-#     hist_max_per_pixel = 5
-#     x_meters_max = 16
-#     y_meters_max = 16
-#     xbins = np.linspace(-x_meters_max, x_meters_max, 32 * pixels_per_meter + 1)
-#     ybins = np.linspace(-y_meters_max, y_meters_max, 32 * pixels_per_meter + 1)
-
-#     def splat(points):
-#         hist = np.histogramdd(points[:, :2], bins=(xbins, ybins))[0]
-#         hist = np.clip(hist, 0, hist_max_per_pixel) / hist_max_per_pixel
-#         return hist.T  # rows=y, cols=x, matching imshow's (row, col) convention
-
-#     above = lidar_points[lidar_points[:, 2] > -1.71]
-#     below = lidar_points[lidar_points[:, 2] <= -1.71]
-#     extent = (xbins[0], xbins[-1], ybins[0], ybins[-1])
-
-#     fig, axes = plt.subplots(1, 2, figsize=(10, 6), sharey=True)
-#     im = None
-#     for ax, points, label in ((axes[0], above, 'above -1.71m (obstacles)'),
-#                                (axes[1], below, 'below -1.71m (ground-level)')):
-#         im = ax.imshow(splat(points), origin='lower', extent=extent,
-#                         cmap='viridis', vmin=0, vmax=1, aspect='equal')
-#         ax.set_title(label)
-#         ax.set_xlabel('x (m)')
-#     axes[0].set_ylabel('y (m)')
-#     fig.colorbar(im, ax=axes, shrink=0.8, label='occupancy (clipped, normalized)')
-#     if title:
-#         fig.suptitle(title)
-#     fig.savefig(output_path, dpi=150, bbox_inches='tight')
-#     plt.close(fig)
-#     return output_path
 
 
 if __name__ == "__main__":

@@ -203,9 +203,6 @@ def main():
         lidar_bev = batch['lidar'].to(device, dtype=torch.float32)
         ego_vel = batch['velocity'].to(device, dtype=torch.float32).reshape(-1, 1)
 
-        # target_point = batch['target_point'].to(device, dtype=torch.float32)
-        # target_point_image = batch['target_point_image'].to(device, dtype=torch.float32)
-        # target_point, target_point_image, ego_vel = fill_missing_model_inputs(batch, config, device)
         gt_waypoints = batch['ego_waypoint'].to(device, dtype=torch.float32)
 
         # Anchor bookkeeping has to happen before the forward pass now: the command's
@@ -215,13 +212,10 @@ def main():
         if theta0 is None:
             theta0 = theta
         else:
-            # Advance the anchor position by the previous step's actual displacement
-            # to this step (its first ground-truth waypoint), rotated into the anchor frame.
             anchor_pos = anchor_pos + rotation_matrix(prev_theta - theta0) @ prev_pred_local[0]
         R = rotation_matrix(theta - theta0)
 
-        # Anchor-frame goal -> this step's ego frame, mirroring what data.py did with
-        # local_command_point (data.py:354-359).
+        # Anchor-frame goal -> this step's ego frame
         goal_local = R.T @ (goal_anchored - anchor_pos)
         batch_size = rgb.shape[0]
         target_point = torch.from_numpy(goal_local).to(device, dtype=torch.float32) \

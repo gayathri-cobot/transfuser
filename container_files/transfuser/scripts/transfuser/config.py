@@ -8,9 +8,13 @@ class GlobalConfig:
     lidar_seq_len = 1
     pred_len = 4 # future waypoints predicted
     scale = 1 # image pre-processing
-    img_resolution = (448, 928) # image pre-processing in H, W. Sized for the real 800x1280 fisheye captures (see camera_width/camera_height), not the old 480x960 sim assumption
-    img_crop_shift_y = 144 # Shifts the vertical crop window down from center so it keeps floor instead of ceiling - the fisheye camera is mounted high (see camera_pos) and level, so most of the useful floor area sits in the lower half of the frame
-    img_width = 320 # important this should be consistent with scale, e.g. scale = 1, img_width 320, scale=2, image_width 640
+    img_resolution = (448, 928) # image pre-processing in H, W. Sized for the real 800x1280 fisheye 
+    # captures (see camera_width/camera_height), not the old 480x960 sim assumption
+    img_crop_shift_y = 144 # Shifts the vertical crop window down from center so it keeps floor instead of ceiling 
+    # - the fisheye camera is mounted high (see camera_pos) and level, so most of the useful floor area sits in 
+    # the lower half of the frame
+    img_width = 320 # important this should be consistent with scale, e.g. scale = 1, img_width 320, scale=2, 
+    # image_width 640
     lidar_resolution_width  = 256 # Width of the LiDAR grid that the point cloud is voxelized into.
     lidar_resolution_height = 256 # Height of the LiDAR grid that the point cloud is voxelized into.
     pixels_per_meter = 8.0 # How many pixels make up 1 meter. 1 / pixels_per_meter = size of pixel in meters
@@ -25,8 +29,8 @@ class GlobalConfig:
     camera_rot_1 = [0.0, 0.0, -90.0] # Roll Pitch Yaw of camera 1 in degree
     camera_rot_2 = [0.0, 0.0, 90.0] # Roll Pitch Yaw of camera 2 in degree
 
-    bev_resolution_width  = 300 # Width resoultion the BEV loss is upsampled to. Double check if width and height are swapped if you want to make them non symmetric.
-    bev_resolution_height = 300 # Height resoultion the BEV loss is upsampled to. Double check if width and height are swapped if you want to make them non symmetric.
+    bev_resolution_width  = 300 # Width resoultion the BEV loss is upsampled to. 
+    bev_resolution_height = 300 # Height resoultion the BEV loss is upsampled to. 
     use_target_point_image = False
     gru_concat_target_point = True
     augment = False
@@ -46,20 +50,7 @@ class GlobalConfig:
     num_input = 9
     num_features = [32, 32]
 
-    backbone = 'transFuser'
-    # backbone = 'geometric_fusion'
-
-    # CenterNet parameters
-    num_dir_bins = 12
-    fp16_enabled = False
-    center_net_bias_init_with_prob = 0.1
-    center_net_normal_init_std = 0.001
-    top_k_center_keypoints = 100
-    center_net_max_pooling_kernel = 3
     channel = 64
-
-    bounding_box_divisor = 2.0 # The height and width of the bounding box value was changed by this factor during data collection. Fix that for future datasets and remove
-    draw_brake_threshhold = 0.5 # If the brake value is higher than this threshhold, the bb will be drawn with the brake color during visualization
 
     #Waypoint GRU
     gru_hidden_size = 64
@@ -115,28 +106,9 @@ class GlobalConfig:
     embd_pdrop = 0.1
     resid_pdrop = 0.1
     attn_pdrop = 0.1
-    gpt_linear_layer_init_mean = 0.0 # Mean of the normal distribution with which the linear layers in the GPT are initialized
-    gpt_linear_layer_init_std  = 0.02 # Std  of the normal distribution with which the linear layers in the GPT are initialized
+    gpt_linear_layer_init_mean = 0.0 # Mean of the normal distribution with which the linear layers in GPT initialized
+    gpt_linear_layer_init_std  = 0.02 # Std  of the normal distribution with which the linear layers in GPT initialized
     gpt_layer_norm_init_weight = 1.0 # Initial weight of the layer norms in the gpt.
-
-    # Controller
-    turn_KP = 1.25
-    turn_KI = 0.75
-    turn_KD = 0.3
-    turn_n = 20 # buffer size
-
-    speed_KP = 5.0
-    speed_KI = 0.5
-    speed_KD = 1.0
-    speed_n = 20 # buffer size
-
-    default_speed = 4.0 # Speed used when creeping
-
-    max_throttle = 0.75 # upper limit on throttle signal value in dataset
-    brake_speed = 0.4 # desired speed below which brake is triggered
-    brake_ratio = 1.1 # ratio of speed to desired speed at which brake is triggered
-    clip_delta = 0.25 # maximum change in speed input to logitudinal controller
-    clip_throttle = 0.75 # Maximum throttle allowed by the controller
 
     def __init__(self, root_dir='', setting='all', eval_scenario='scenario_1', eval_route=None, **kwargs):
         self.root_dir = root_dir
@@ -161,11 +133,15 @@ class GlobalConfig:
             self.train_towns = os.listdir(self.root_dir)
             self.val_towns = self.train_towns
             self.train_data, self.val_data = [], []
-            print("Adding Scenario_3, Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit), Scenario_12, Scenario_13, Scenario_15 to validation data")
+            print("Adding Scenario_3, Scenario 5, Scenario 6, Scenario 8, Scenario 8 (lit)," \
+            " Scenario_12, Scenario_13, Scenario_15 to validation data")
             for town in self.train_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town)) #Town folders
                 for file in root_files:
-                    if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
+                    if ((town.find('scenario_3') != -1) or (town.find('scenario_5') != -1) or 
+                        (town.find('scenario_6') != -1) or (town.find('scenario_8') != -1) or 
+                        (town.find('scenario_8_lit') != -1) or (town.find('scenario_12') != -1) or 
+                        (town.find('scenario_13') != -1) or (town.find('scenario_15') != -1)):  
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         self.train_data.append(os.path.join(self.root_dir, town, file))
@@ -175,7 +151,11 @@ class GlobalConfig:
             for town in self.val_towns:
                 root_files = os.listdir(os.path.join(self.root_dir, town))
                 for file in root_files:
-                    if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
+                    if ((town.find('scenario_3') == -1) and (town.find('scenario_5') == -1) and 
+                        (town.find('scenario_6') == -1) and (town.find('scenario_8') == -1) and 
+                        (town.find('scenario_8_lit') == -1) and (town.find('scenario_12') == -1) and 
+                        (town.find('scenario_13') == -1) and (town.find('scenario_15') == -1)): 
+                        # Only use Scenario 5, 6, 8, 8 (lit), 12 and 13 for validation
                         continue
                     if not os.path.isfile(os.path.join(self.root_dir, town, file)):
                         self.val_data.append(os.path.join(self.root_dir, town, file))
