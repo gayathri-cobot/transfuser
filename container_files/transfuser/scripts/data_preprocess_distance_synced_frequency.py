@@ -224,17 +224,6 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
 
     val = _bag_topic_counts(bag_path).get(ref_topic, None)
 
-    # if val is not None and val>200:
-    #     stride = math.ceil(val / MAX_REF_FRAMES)
-    # else:
-    #     stride = 1
-
-    # stride = 1
-
-     
-    #calculate the average frequency of the reference topic
-    avg_freq = average_topic_hz(bag_path).get(ref_topic, 0)
-    print(f"[info] average frequency of {ref_topic}: {avg_freq:.2f} Hz")
 
     depth_topics = next((t for t in DEPTH_TOPIC_CANDIDATES if t in type_map), None)
     camera_topic = next((t for t in CAMERA_TOPIC_CANDIDATES if t in type_map), None)
@@ -242,17 +231,6 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
     print(depth_topics, camera_topic)
 
     lidar_topic = next((t for t in LIDAR_TOPIC_CANDIDATES if t in type_map), None)
-
-    """
-    {'/hesai/pandar_points_isaac': 'sensor_msgs/msg/PointCloud2',
-    '/cmd_vel/isaac': 'geometry_msgs/msg/Twist',
-    '/front_camera/color/image_view': 'sensor_msgs/msg/Image',
-    '/front_camera/aligned_depth_to_color/image_rect_raw': 'sensor_msgs/msg/Image',
-    '/tf_static': 'tf2_msgs/msg/TFMessage',
-    '/tf': 'tf2_msgs/msg/TFMessage',
-    '/local_costmap': 'nav_msgs/msg/OccupancyGrid'}
-
-    """
 
     topics = (
         [ref_topic, TF_STATIC_TOPIC, COSTMAP_TOPIC, CMD_VEL_TOPIC]
@@ -287,9 +265,6 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
             latest[topic_name] = (t, msg, msg_type_name)
             continue
 
-        # topic_name == ref_topic == TF_TOPIC: update the buffer, then gate on
-        # distance traveled since the last saved tick before treating this as
-        # a reference tick.
         for tf_msg in msg.transforms:
             tf_buffer.set_transform(tf_msg, 'bag')
 

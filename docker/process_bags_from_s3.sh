@@ -37,16 +37,17 @@ set -uo pipefail
 export CONTAINER_NAME="sil-data-preprocess-$$"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 SRC_BUCKET="${SRC_BUCKET:-e2e-local-nav-eval}"
 SRC_PREFIX="${SRC_PREFIX:-scenario_3}"
 DST_BUCKET="${DST_BUCKET:-e2e-local-nav-processed}"
 DST_PREFIX="${DST_PREFIX:-$SRC_PREFIX}"
 
-BAG_DATA_DIR="${BAG_DATA_DIR:-$HOME/bag_data}"
-OUT_DIR="${OUT_DIR:-$HOME/data}"
-ROUTES_DIR="${ROUTES_DIR:-$HOME/routes}"
-LOG_DIR="${LOG_DIR:-$HOME/preprocess_logs}"
+BAG_DATA_DIR="${BAG_DATA_DIR:-$REPO_ROOT/bag_data}"
+OUT_DIR="${OUT_DIR:-$REPO_ROOT/data}"
+ROUTES_DIR="${ROUTES_DIR:-$REPO_ROOT/routes}"
+LOG_DIR="${LOG_DIR:-$REPO_ROOT/preprocess_logs}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-40}"
 
 # Parallelism / disk budget.
@@ -70,7 +71,7 @@ LEGACY="${LEGACY:-0}"
 MIN_DIST="${MIN_DIST:-}"
 MAX_SYNC_DT="${MAX_SYNC_DT:-}"
 
-export AWS_CONFIG_FILE="${AWS_CONFIG_FILE:-$HOME/aws_config.ini}"
+export AWS_CONFIG_FILE="${AWS_CONFIG_FILE:-$REPO_ROOT/aws_config.ini}"
 export AWS_PROFILE="${AWS_PROFILE:-sil-bag-upload}"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -89,12 +90,12 @@ aws sts get-caller-identity >/dev/null 2>&1 || die "no valid AWS session — run
 # prep_extract.py / run_prep.py import data_preprocess_distance, which
 # run_data_preprocess.sh bind-mounts from PREPROCESS_PY. All four have to be in
 # PREP_DIR together or the container import fails per bag.
-PREPROCESS_PY="${PREPROCESS_PY:-$HOME/data_preprocess_distance.py}"
+PREPROCESS_PY="${PREPROCESS_PY:-$REPO_ROOT/data_preprocess_distance.py}"
 [ -f "$PREPROCESS_PY" ] || die "PREPROCESS_PY not found: $PREPROCESS_PY (set PREPROCESS_PY=...)"
 export PREPROCESS_PY
 
 if [ "$LEGACY" != "1" ]; then
-	PREP_DIR="${PREP_DIR:-$HOME}"
+	PREP_DIR="${PREP_DIR:-$REPO_ROOT}"
 	for f in run_prep.py prep_extract.py prep_segment.py; do
 		[ -f "$PREP_DIR/$f" ] || die "PREP_DIR is missing $f: $PREP_DIR/$f (set PREP_DIR=..., or LEGACY=1 to use data_preprocess_distance.py directly)"
 	done

@@ -42,15 +42,9 @@ import torch
 DEFAULT_BAG_DATA = '/workspace/bag_data'
 
 #Topic details
-CAMERA_SIDES = ('left', 'front', 'right')
-CAMERA_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/color/image_view')
-    for side in CAMERA_SIDES
-}
-DEPTH_TOPIC_CANDIDATES = {
-    side: (f'/{side}_camera/aligned_depth_to_color/image_rect_raw')
-    for side in CAMERA_SIDES
-}
+
+CAMERA_TOPIC_CANDIDATES = ('/front_camera/color/image_view','/front_camera/color/image_view_throttled')
+DEPTH_TOPIC_CANDIDATES = ('/front_camera/aligned_depth_to_color/image_rect_raw', '/front_camera/aligned_depth_to_color/image_rect_raw_throttled',)
 LIDAR_TOPIC_CANDIDATES = ('/hesai/pandar_points_isaac', '/hesai/pandar_points')
 COSTMAP_TOPIC = '/local_costmap'
 CMD_VEL_TOPIC = '/cmd_vel/isaac'
@@ -215,41 +209,26 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
     when a sample within max_dt_ns of the reference timestamp exists.
     Nothing is written for reference frames without full coverage.
     """
-    for side in CAMERA_SIDES:
-        os.makedirs(os.path.join(output_path, 'rgb', side), exist_ok=True)
-        os.makedirs(os.path.join(output_path, 'depth', side), exist_ok=True)
+
     os.makedirs(os.path.join(output_path, 'lidar'), exist_ok=True)
     os.makedirs(os.path.join(output_path, 'costmap'), exist_ok=True)
     os.makedirs(os.path.join(output_path, 'trajectory'), exist_ok=True)
 
-    ref_topic = CAMERA_TOPIC_CANDIDATES[ref_side]
+    ref_topic = next((t for t in CAMERA_TOPIC_CANDIDATES if t in type_map), None)
 
-    val = _bag_topic_counts(bag_path).get(ref_topic, None)
-
-    # if val is not None and val>200:
-    #     stride = math.ceil(val / MAX_REF_FRAMES)
-    # else:
-    #     stride = 1
-
-    # stride = 1
-
-     
     #calculate the average frequency of the reference topic
     avg_freq = average_topic_hz(bag_path).get(ref_topic, 0)
     print(f"[info] average frequency of {ref_topic}: {avg_freq:.2f} Hz")
-    other_side = ('left', 'right')
 
-    depth_topics = list(DEPTH_TOPIC_CANDIDATES.values())
-    other_camera_topics = [
-        v for k, v in CAMERA_TOPIC_CANDIDATES.items() if k != ref_side
-    ]
+    depth_topics = next((t for t in DEPTH_TOPIC_CANDIDATES if t in type_map), None)
+ 
     lidar_topic = next((t for t in LIDAR_TOPIC_CANDIDATES if t in type_map), None)
 
     topics = (
         [ref_topic, TF_STATIC_TOPIC, TF_TOPIC, COSTMAP_TOPIC, CMD_VEL_TOPIC]
-        + depth_topics + other_camera_topics
+        + ([depth_topics] if depth_topics else [])
         + ([lidar_topic] if lidar_topic else [])
-    )
+        )
 
     tf_buffer = tf2_ros.Buffer()
     latest = {}  # topic_name -> (t, msg, msg_type_name)
@@ -291,7 +270,7 @@ def save_synced_frames(bag_path, type_map, counts, output_path,
                 return None
             return entry
 
-        depth_entry = closest_val(DEPTH_TOPIC_CANDIDATES[ref_side])
+        depth_entry = closest_val(depth_topics)
         lidar_entry = closest_val(lidar_topic) if lidar_topic else True  # optional
         costmap_entry = latest.get(COSTMAP_TOPIC)
         cmd_vel_entry = closest_val(CMD_VEL_TOPIC)
@@ -702,7 +681,7 @@ def main():
                          help="Robot base frame for the trajectory (default: %(default)s).")
     parser.add_argument('--map-frame', default='map',
                          help="Fixed frame the trajectory is expressed in (default: %(default)s).")
-    parser.add_argument('--max-sync-dt', type=float, default=0.5,
+    parser.add_argument('--max-sync-dt', type=float, default=10/6,
                          help="Max allowed time gap, in seconds, between the reference "
                               "front-camera tick and every other synced stream "
                               "(depth/lidar/costmap/left+right camera). The throttled "

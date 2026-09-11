@@ -25,34 +25,35 @@
 # <run-dir> is a path relative to BAG_DATA_DIR and must contain metadata.yaml.
 #
 # Host layout (override any of these with env vars):
-#   BAG_DATA_DIR   $HOME/bag_data   -> /workspace/bag_data   (ro)   bag runs
-#   ROUTES_DIR     $HOME/routes     -> /workspace/routes     (ro)   <scenario>.xml
-#   OUT_DIR        $HOME/data       -> /workspace/data       (rw)   results
-#   CACHE_DIR      $HOME/.cache/sil-preprocess                      HF model cache
-#   PREPROCESS_PY  $HOME/data_preprocess_distance.py
+#   BAG_DATA_DIR   <repo-root>/bag_data   -> /workspace/bag_data   (ro)   bag runs
+#   ROUTES_DIR     <repo-root>/routes     -> /workspace/routes     (ro)   <scenario>.xml
+#   OUT_DIR        <repo-root>/data       -> /workspace/data       (rw)   results
+#   CACHE_DIR      <repo-root>/.cache/sil-preprocess                      HF model cache
+#   PREPROCESS_PY  <repo-root>/data_preprocess_distance.py
 #                                   -> /workspace/data_preprocess_distance.py (ro)
 #                                   prep_extract.py / run_prep.py import it by
 #                                   that name, so the basename matters.
 #
 # PREP_MODE=batch additionally mounts (see PREP_DIR / PREP_LOG_DIR below):
-#   PREP_DIR       $HOME            -> run_prep.py, prep_extract.py, prep_segment.py
-#   PREP_LOG_DIR   $HOME/preprocess_logs/prep -> /workspace/prep_logs (rw)
+#   PREP_DIR       <repo-root>      -> run_prep.py, prep_extract.py, prep_segment.py
+#   PREP_LOG_DIR   <repo-root>/preprocess_logs/prep -> /workspace/prep_logs (rw)
 #                                       per-bag stage 1 logs, kept on the host
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
-BAG_DATA_DIR="${BAG_DATA_DIR:-$HOME/bag_data}"
-ROUTES_DIR="${ROUTES_DIR:-$HOME/routes}"
-OUT_DIR="${OUT_DIR:-$HOME/data}"
-CACHE_DIR="${CACHE_DIR:-$HOME/.cache/sil-preprocess}"
-PREPROCESS_PY="${PREPROCESS_PY:-$HOME/data_preprocess_distance.py}"
+BAG_DATA_DIR="${BAG_DATA_DIR:-$REPO_ROOT/bag_data}"
+ROUTES_DIR="${ROUTES_DIR:-$REPO_ROOT/routes}"
+OUT_DIR="${OUT_DIR:-$REPO_ROOT/data}"
+CACHE_DIR="${CACHE_DIR:-$REPO_ROOT/.cache/sil-preprocess}"
+PREPROCESS_PY="${PREPROCESS_PY:-$REPO_ROOT/data_preprocess_distance.py}"
 CONTAINER_NAME="${CONTAINER_NAME:-sil-data-preprocess}"
 
 # PREP_MODE=batch only
 PREP_MODE="${PREP_MODE:-single}"
-PREP_DIR="${PREP_DIR:-$HOME}"
-PREP_LOG_DIR="${PREP_LOG_DIR:-$HOME/preprocess_logs/prep}"
+PREP_DIR="${PREP_DIR:-$REPO_ROOT}"
+PREP_LOG_DIR="${PREP_LOG_DIR:-$REPO_ROOT/preprocess_logs/prep}"
 EXTRACT_JOBS="${EXTRACT_JOBS:-4}"
 SEG_BATCH_SIZE="${SEG_BATCH_SIZE:-16}"
 SEG_WORKERS="${SEG_WORKERS:-4}"

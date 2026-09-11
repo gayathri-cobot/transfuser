@@ -50,6 +50,8 @@ class GlobalConfig:
     num_input = 9
     num_features = [32, 32]
 
+    backbone = 'transFuser'
+
     channel = 64
 
     #Waypoint GRU
